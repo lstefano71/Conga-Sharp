@@ -1,6 +1,7 @@
 namespace CongaSharp.Core;
 
 using CongaSharp.Diagnostics;
+using CongaSharp.Events;
 using CongaSharp.Properties;
 
 /// <summary>
@@ -19,22 +20,25 @@ public sealed class Root : IDisposable
     public ObjectRegistry Registry { get; } = new();
     public PropertyStore Properties { get; } = new(ObjectType.Root);
     public TraceLogger Trace { get; } = new();
+    public EventQueue Events { get; } = new();
 
     /// <summary>
-    /// Initiates shutdown: signals all pending operations to cancel.
+    /// Initiates shutdown: signals all pending operations to cancel,
+    /// unblocks all waiters, closes all connections.
     /// </summary>
     public void Shutdown()
     {
         if (Interlocked.CompareExchange(ref _disposed, 1, 0) == 0)
         {
             _shutdownCts.Cancel();
-            // Future: close all connections, drain event queue
+            Events.SignalShutdown();
         }
     }
 
     public void Dispose()
     {
         Shutdown();
+        Events.Dispose();
         Trace.Dispose();
         _shutdownCts.Dispose();
     }

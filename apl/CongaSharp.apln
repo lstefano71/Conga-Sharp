@@ -1,0 +1,223 @@
+:Namespace CS
+⍝ CongaSharp — APL Cover Functions
+⍝ Wraps the congasharp.dll native exports for convenient APL usage.
+⍝
+⍝ Usage:
+⍝   CS.Init ⍬              ⍝ initialise, returns handle
+⍝   CS.Srv h 'S1' '' 8080 'Command' 16384  ⍝ create + start server
+⍝   CS.Clt h 'C1' '127.0.0.1' 8080 'Command' 16384 5000  ⍝ create + connect client
+⍝   CS.Wait h '' 5000       ⍝ wait for next event
+⍝   CS.Send h 'C1' data     ⍝ send bytes
+⍝   CS.Respond h 'S1.CON0001.Echo' data   ⍝ respond to command
+⍝   CS.Progress h 'S1.CON0001.Echo' data  ⍝ send interim progress
+⍝   CS.Close h 'S1'         ⍝ close an object
+⍝   CS.Shutdown h            ⍝ shutdown root
+⍝
+⍝ All functions return (rc result) where rc=0 means success.
+
+    ⎕IO←0 ⋄ ⎕ML←1
+
+    ∇ path←DllPath
+    ⍝ Override this to point to your congasharp.dll location
+      path←'congasharp'
+    ∇
+
+    ⍝ ── ⎕NA Declarations ──────────────────────────────────────
+
+    ∇ Bind
+    ⍝ Binds all ⎕NA declarations. Call once before using any CS function.
+      ⎕NA'I4 ',DllPath,'|conga_version >0T[] I4'
+      ⎕NA'I4 ',DllPath,'|conga_init >P'
+      ⎕NA'I4 ',DllPath,'|conga_shutdown P'
+      ⎕NA'I4 ',DllPath,'|conga_close P <0T'
+      ⎕NA'I4 ',DllPath,'|conga_setprop P <0T <0T <0T'
+      ⎕NA'I4 ',DllPath,'|conga_getprop P <0T <0T >0T[] I4 >I4'
+      ⎕NA'I4 ',DllPath,'|conga_tree P <0T >0T[] I4 >I4'
+      ⎕NA'I4 ',DllPath,'|conga_describe P <0T >0T[] I4 >I4'
+      ⎕NA'I4 ',DllPath,'|conga_names P <0T >0T[] I4 >I4'
+      ⎕NA'I4 ',DllPath,'|conga_srv_create P <0T <0T I4 <0T I4 >0T[] I4 >I4'
+      ⎕NA'I4 ',DllPath,'|conga_srv_start P <0T'
+      ⎕NA'I4 ',DllPath,'|conga_clt_create P <0T <0T I4 <0T I4 >0T[] I4 >I4'
+      ⎕NA'I4 ',DllPath,'|conga_clt_connect P <0T I4'
+      ⎕NA'I4 ',DllPath,'|conga_wait P <0T I4 >0T[] I4 >0T[] I4 >I4 >U1[] I4 >I4 >U1[] I4 >I4'
+      ⎕NA'I4 ',DllPath,'|conga_send P <0T <U1[] I4 <U1[] I4 I4'
+      ⎕NA'I4 ',DllPath,'|conga_respond P <0T <U1[] I4'
+      ⎕NA'I4 ',DllPath,'|conga_progress P <0T <U1[] I4'
+    ∇
+
+    ⍝ ── Error Handling ────────────────────────────────────────
+
+    ∇ r←Check args;rc;result
+    ⍝ Check return code. If non-zero and not WaitTimeout, ⎕SIGNAL.
+      rc result←(1↑args)(1↓args)
+      :If rc=0
+          r←result
+      :ElseIf rc=1  ⍝ WaitTimeout — not an error, just no event
+          r←'Timeout' 8 ⍬ ⍬  ⍝ return timeout pseudo-event
+      :Else
+          ⎕SIGNAL⊂('EN' 11)('EM'('CongaSharp error: ',⍕rc))
+      :EndIf
+    ∇
+
+    ⍝ ── Core Functions ────────────────────────────────────────
+
+    ∇ r←Version
+    ⍝ Returns the library version string.
+      r←Check conga_version(256 ⌈0)256
+    ∇
+
+    ∇ r←Init dummy
+    ⍝ Initialise a new CongaSharp root. Returns the handle.
+      r←Check conga_init 0
+    ∇
+
+    ∇ r←Shutdown h
+    ⍝ Shutdown a root: closes all connections, unblocks waiters.
+      r←conga_shutdown h
+    ∇
+
+    ∇ r←Close(h name)
+    ⍝ Close a specific object (server, client, connection, command).
+      r←conga_close h name
+    ∇
+
+    ⍝ ── Property Functions ────────────────────────────────────
+
+    ∇ r←SetProp(h obj prop value)
+    ⍝ Set a property. value should be a JSON string.
+      r←conga_setprop h obj prop value
+    ∇
+
+    ∇ r←GetProp(h obj prop)
+    ⍝ Get a property. Returns parsed JSON value.
+    ⍝ Result: (rc jsonString actualLen)
+      :If 0=1⊃r←conga_getprop h obj prop(4096 ⌈0)4096 0
+          r←⎕JSON⊃1↓r  ⍝ parse JSON, return value
+      :EndIf
+    ∇
+
+    ⍝ ── Query Functions ───────────────────────────────────────
+
+    ∇ r←Tree(h obj)
+    ⍝ Returns the object hierarchy as parsed JSON.
+      :If 0=1⊃r←conga_tree h obj(65536 ⌈0)65536 0
+          r←⎕JSON⊃1↓r
+      :EndIf
+    ∇
+
+    ∇ r←Describe(h obj)
+    ⍝ Returns all properties of an object as parsed JSON.
+      :If 0=1⊃r←conga_describe h obj(65536 ⌈0)65536 0
+          r←⎕JSON⊃1↓r
+      :EndIf
+    ∇
+
+    ∇ r←Names(h obj)
+    ⍝ Returns child names as parsed JSON array.
+      :If 0=1⊃r←conga_names h obj(65536 ⌈0)65536 0
+          r←⎕JSON⊃1↓r
+      :EndIf
+    ∇
+
+    ⍝ ── Server Functions ──────────────────────────────────────
+
+    ∇ r←Srv(h name addr port mode bufSize);rc;sName;props
+    ⍝ Three-phase server creation: create → configure → start.
+    ⍝ h     = root handle
+    ⍝ name  = requested name ('' for auto)
+    ⍝ addr  = bind address ('' for all interfaces)
+    ⍝ port  = port number (0 for ephemeral)
+    ⍝ mode  = 'Command' 'Text' 'Raw' 'BlkText' 'BlkRaw'
+    ⍝ bufSize = receive buffer size
+    ⍝ Returns: assigned server name
+      rc sName←2↑conga_srv_create h name addr port mode bufSize(256 ⌈0)256 0
+      :If rc≠0 ⋄ ⎕SIGNAL⊂('EN' 11)('EM'('srv_create failed: ',⍕rc)) ⋄ :EndIf
+      sName←⊃sName
+
+      ⍝ Phase 3: Start
+      rc←conga_srv_start h sName
+      :If rc≠0 ⋄ ⎕SIGNAL⊂('EN' 11)('EM'('srv_start failed: ',⍕rc)) ⋄ :EndIf
+
+      r←sName
+    ∇
+
+    ∇ r←SrvCreate(h name addr port mode bufSize)
+    ⍝ Phase 1 only: create server without starting. Returns assigned name.
+      r←Check conga_srv_create h name addr port mode bufSize(256 ⌈0)256 0
+      r←⊃r
+    ∇
+
+    ∇ r←SrvStart(h name)
+    ⍝ Phase 3: start a previously created server.
+      r←conga_srv_start h name
+    ∇
+
+    ⍝ ── Client Functions ──────────────────────────────────────
+
+    ∇ r←Clt(h name addr port mode bufSize timeout);rc;cName
+    ⍝ Three-phase client: create → configure → connect.
+    ⍝ timeout = connect timeout in milliseconds
+    ⍝ Returns: assigned client name
+      rc cName←2↑conga_clt_create h name addr port mode bufSize(256 ⌈0)256 0
+      :If rc≠0 ⋄ ⎕SIGNAL⊂('EN' 11)('EM'('clt_create failed: ',⍕rc)) ⋄ :EndIf
+      cName←⊃cName
+
+      ⍝ Phase 3: Connect
+      rc←conga_clt_connect h cName timeout
+      :If rc≠0 ⋄ ⎕SIGNAL⊂('EN' 11)('EM'('clt_connect failed: ',⍕rc)) ⋄ :EndIf
+
+      r←cName
+    ∇
+
+    ∇ r←CltCreate(h name addr port mode bufSize)
+    ⍝ Phase 1 only: create client without connecting. Returns assigned name.
+      r←Check conga_clt_create h name addr port mode bufSize(256 ⌈0)256 0
+      r←⊃r
+    ∇
+
+    ∇ r←CltConnect(h name timeout)
+    ⍝ Phase 3: connect a previously created client.
+      r←conga_clt_connect h name timeout
+    ∇
+
+    ⍝ ── Communication Functions ───────────────────────────────
+
+    ∇ r←Wait(h name timeout);rc;obj;evt;code;data;dataLen;hdrs;hdrsLen
+    ⍝ Wait for an event. Returns: (objectName eventName eventCode payload userHeaders)
+    ⍝ name    = object filter ('' or '.' for all)
+    ⍝ timeout = milliseconds
+      rc obj evt code data dataLen hdrs hdrsLen←conga_wait h name timeout(256 ⌈0)256(64 ⌈0)64 0(65536 ⌈0)65536 0(4096 ⌈0)4096 0
+      :If rc=0
+          obj←⊃obj ⋄ evt←⊃evt ⋄ code←⊃code
+          data←dataLen↑⊃data     ⍝ trim to actual length
+          hdrs←hdrsLen↑⊃hdrs     ⍝ trim to actual length
+          r←obj evt code data hdrs
+      :ElseIf rc=1  ⍝ WaitTimeout
+          r←'' 'Timeout' 8 ⍬ ⍬
+      :Else
+          ⎕SIGNAL⊂('EN' 11)('EM'('conga_wait failed: ',⍕rc))
+      :EndIf
+    ∇
+
+    ∇ r←Send(h name data);closeFlag;hdrs
+    ⍝ Send data on a connection. data must be a byte vector (⎕DR 83).
+      closeFlag←0 ⋄ hdrs←⍬
+      r←conga_send h name data(≢data)hdrs(≢hdrs)closeFlag
+    ∇
+
+    ∇ r←SendEx(h name data hdrs closeFlag)
+    ⍝ Extended send with user headers and close flag.
+      r←conga_send h name data(≢data)hdrs(≢hdrs)closeFlag
+    ∇
+
+    ∇ r←Respond(h name data)
+    ⍝ Send final response for a command (closes the command).
+      r←conga_respond h name data(≢data)
+    ∇
+
+    ∇ r←Progress(h name data)
+    ⍝ Send interim progress message for a command.
+      r←conga_progress h name data(≢data)
+    ∇
+
+:EndNamespace
