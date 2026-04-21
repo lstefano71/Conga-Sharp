@@ -46,40 +46,40 @@ Unlike original Conga (written in C++), Conga-Sharp:
 ┌──────────────────────────────────────────────────────────────┐
 │                      Dyalog APL                              │
 │                                                              │
-│   ⎕NA declarations ──► congasharp.dll (C exports)            │
-│   CS.Init / CS.Srv / CS.Clt / CS.Wait / CS.Send / ...       │
+│   ⎕NA declarations ──► congasharp.dll (C exports)           │
+│   CS.Init / CS.Srv / CS.Clt / CS.Wait / CS.Send / ...        │
 │   Payloads: ⎕DR 83 (serialize to byte vector)               │
 │   Structured results: ⎕JSON (parse JSON strings)            │
 └──────────────────────────┬───────────────────────────────────┘
                            │ C ABI (wchar_t*, uint8_t*, int32_t)
 ┌──────────────────────────▼───────────────────────────────────┐
-│                    congasharp.dll                             │
+│                    congasharp.dll                            │
 │                  (NativeAOT, C# 14)                          │
 │                                                              │
-│  ┌─────────────┐  ┌──────────────┐  ┌─────────────────────┐ │
-│  │ Native      │  │ Object Model │  │ Property System     │ │
-│  │ Exports     │──│ Root/Srv/Clt │──│ JSON Get/Set        │ │
-│  │ (C ABI)     │  │ Conn/Cmd     │  │ Tree/Describe/Names │ │
-│  └─────────────┘  └──────┬───────┘  └─────────────────────┘ │
+│  ┌─────────────┐  ┌──────────────┐  ┌─────────────────────┐  │
+│  │ Native      │  │ Object Model │  │ Property System     │  │
+│  │ Exports     │──│ Root/Srv/Clt │──│ JSON Get/Set        │  │
+│  │ (C ABI)     │  │ Conn/Cmd     │  │ Tree/Describe/Names │  │
+│  └─────────────┘  └──────┬───────┘  └─────────────────────┘  │
 │                          │                                   │
 │  ┌───────────────────────▼───────────────────────────────┐   │
-│  │                   Event System                         │   │
-│  │  ConcurrentQueue per root, Wait blocks with timeout    │   │
+│  │                   Event System                        │   │
+│  │  ConcurrentQueue per root, Wait blocks with timeout   │   │
 │  └───────────────────────┬───────────────────────────────┘   │
 │                          │                                   │
 │  ┌───────────────────────▼───────────────────────────────┐   │
-│  │               Connection Modes                         │   │
-│  │  Command │ Text │ Raw │ BlkText │ BlkRaw               │   │
+│  │               Connection Modes                        │   │
+│  │  Command │ Text │ Raw │ BlkText │ BlkRaw              │   │
 │  └───────────────────────┬───────────────────────────────┘   │
 │                          │                                   │
 │  ┌───────────────────────▼───────────────────────────────┐   │
-│  │                Wire Protocol                           │   │
-│  │  52-byte header │ CRC-32C │ Compression │ User Headers │   │
+│  │                Wire Protocol (for framed modes)       │   │
+│  │ 52-byte header │ CRC-32C │ Compression │ User Headers │   │
 │  └───────────────────────┬───────────────────────────────┘   │
 │                          │                                   │
 │  ┌───────────────────────▼───────────────────────────────┐   │
-│  │              TCP Networking (.NET Socket)               │   │
-│  │  Async Accept/Connect/Read/Write, Ephemeral Ports      │   │
+│  │              TCP Networking (.NET Socket)             │   │
+│  │  Async Accept/Connect/Read/Write, Ephemeral Ports     │   │
 │  └───────────────────────────────────────────────────────┘   │
 └──────────────────────────────────────────────────────────────┘
 ```
@@ -562,6 +562,9 @@ conga_getprop(h, ".", "PropList", buf, cap, &len)     → "[\"EventMode\",\"Prot
 |---------|----------|-------|
 | TLS/SSL (secure sockets) | High | Certificate management, SNI |
 | HTTP mode (REST) | High | Request/response parsing |
+| UDP Socket | High | A new mode for raw/unframed UDP Sockets |
+| QUIC like (no TLS) | Medium | Experimental transport protocol based on UDP instead of TCP for BlkTxt, BlkRaw and Command modes |
+| Real QUIC support | Medium | Requires a QUIC library with C# bindings. Given the Win10/x64 target, MsQUIC based on OpenSSL could work |
 | WebSocket mode | Medium | Upgrade from HTTP |
 | Multiple named roots | Medium | Independent root isolation |
 | AllowEndPoints/DenyEndPoints | Medium | IP filtering on servers |
