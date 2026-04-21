@@ -80,10 +80,10 @@ public class ModeTests
     public void RawMode_InvalidCloseFlags()
     {
         var mode = new RawMode();
-        var msg = mode.PrepareOutbound("S1.CON0001", [1, 2], null, PostSendAction.CloseCommand, null);
+        var msg = mode.PrepareOutbound("S1.CON0001", new byte[] { 1, 2 }, null, PostSendAction.CloseCommand, null);
         Assert.NotEqual(0, msg.ErrorCode);
 
-        msg = mode.PrepareOutbound("S1.CON0001", [1, 2], null, PostSendAction.EmitSentEvent, null);
+        msg = mode.PrepareOutbound("S1.CON0001", new byte[] { 1, 2 }, null, PostSendAction.EmitSentEvent, null);
         Assert.NotEqual(0, msg.ErrorCode);
     }
 
@@ -91,9 +91,9 @@ public class ModeTests
     public void RawMode_ValidSend()
     {
         var mode = new RawMode();
-        var msg = mode.PrepareOutbound("S1.CON0001", [1, 2, 3], null, PostSendAction.None, null);
+        var msg = mode.PrepareOutbound("S1.CON0001", new byte[] { 1, 2, 3 }, null, PostSendAction.None, null);
         Assert.Equal(0, msg.ErrorCode);
-        Assert.Equal(new byte[] { 1, 2, 3 }, msg.Payload);
+        Assert.Equal(new byte[] { 1, 2, 3 }, msg.Payload.ToArray());
     }
 
     [Fact]
@@ -129,7 +129,7 @@ public class ModeTests
     public void TextMode_WithEOM_SplitsMessages()
     {
         var mode = new TextMode();
-        mode.EomPatterns.Add([13, 10]); // CRLF
+        mode.ConfigureEomFromJson("[[13,10]]"); // CRLF
 
         // "Hello\r\nWorld\r\n"
         var data = new byte[] { 72, 101, 108, 108, 111, 13, 10, 87, 111, 114, 108, 100, 13, 10 };
@@ -144,7 +144,7 @@ public class ModeTests
     public void TextMode_WithEOM_AccumulatesPartial()
     {
         var mode = new TextMode();
-        mode.EomPatterns.Add([13, 10]);
+        mode.ConfigureEomFromJson("[[13,10]]");
 
         // Partial: "Hel"
         var events1 = mode.OnBytesReceived("CON", new byte[] { 72, 101, 108 });
@@ -160,7 +160,7 @@ public class ModeTests
     public void TextMode_OnDisconnected_FlushesBuffer()
     {
         var mode = new TextMode();
-        mode.EomPatterns.Add([13, 10]);
+        mode.ConfigureEomFromJson("[[13,10]]");
 
         mode.OnBytesReceived("CON", new byte[] { 72, 101, 108 });
         var events = mode.OnDisconnected("CON");
@@ -176,7 +176,7 @@ public class ModeTests
     {
         var mode = new TextMode();
         mode.ConfigureEomFromJson("[[13,10],[10]]");
-        Assert.Equal(2, mode.EomPatterns.Count);
+        Assert.Equal(2, mode.EomPatterns.Length);
         Assert.Equal(new byte[] { 13, 10 }, mode.EomPatterns[0]);
         Assert.Equal(new byte[] { 10 }, mode.EomPatterns[1]);
     }
@@ -186,17 +186,17 @@ public class ModeTests
     {
         var mode = new TextMode();
         mode.ConfigureEomFromJson("[]");
-        Assert.Empty(mode.EomPatterns);
+        Assert.Equal(0, mode.EomPatterns.Length);
 
         mode.ConfigureEomFromJson("");
-        Assert.Empty(mode.EomPatterns);
+        Assert.Equal(0, mode.EomPatterns.Length);
     }
 
     [Fact]
     public void TextMode_ResetState_ClearsBuffer()
     {
         var mode = new TextMode();
-        mode.EomPatterns.Add([13, 10]);
+        mode.ConfigureEomFromJson("[[13,10]]");
         mode.OnBytesReceived("CON", new byte[] { 72, 101, 108 });
         mode.ResetState("CON");
 
@@ -223,7 +223,7 @@ public class ModeTests
     public void BlkRawMode_InvalidCloseCommand()
     {
         var mode = new BlkRawMode();
-        var msg = mode.PrepareOutbound("CON", [1, 2], null, PostSendAction.CloseCommand, null);
+        var msg = mode.PrepareOutbound("CON", new byte[] { 1, 2 }, null, PostSendAction.CloseCommand, null);
         Assert.NotEqual(0, msg.ErrorCode);
     }
 
@@ -281,7 +281,7 @@ public class ModeTests
     public void CommandMode_PrepareRespond()
     {
         var mode = new CommandMode();
-        var msg = mode.PrepareRespond("CON", [1, 2], "Echo");
+        var msg = mode.PrepareRespond("CON", new byte[] { 1, 2 }, "Echo");
         Assert.Equal(MsgType.Respond, msg.MsgType);
         Assert.Equal("Echo", msg.CmdName);
         Assert.Equal(PostSendAction.CloseCommand, msg.PostAction);
@@ -291,7 +291,7 @@ public class ModeTests
     public void CommandMode_PrepareProgress()
     {
         var mode = new CommandMode();
-        var msg = mode.PrepareProgress("CON", [50], "Job");
+        var msg = mode.PrepareProgress("CON", new byte[] { 50 }, "Job");
         Assert.Equal(MsgType.Progress, msg.MsgType);
         Assert.Equal("Job", msg.CmdName);
         Assert.Equal(PostSendAction.None, msg.PostAction);

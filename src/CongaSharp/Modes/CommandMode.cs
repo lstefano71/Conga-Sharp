@@ -67,7 +67,7 @@ public sealed class CommandMode : IConnectionMode
         return events;
     }
 
-    public OutboundMessage PrepareOutbound(string connectionName, byte[] payload, byte[]? userHeaders, PostSendAction closeFlag, string? cmdName)
+    public OutboundMessage PrepareOutbound(string connectionName, ReadOnlyMemory<byte> payload, byte[]? userHeaders, PostSendAction closeFlag, string? cmdName)
     {
         return new OutboundMessage
         {
@@ -82,7 +82,7 @@ public sealed class CommandMode : IConnectionMode
     /// <summary>
     /// Prepares a Respond message (final response, closes the command).
     /// </summary>
-    public OutboundMessage PrepareRespond(string connectionName, byte[] payload, string cmdName)
+    public OutboundMessage PrepareRespond(string connectionName, ReadOnlyMemory<byte> payload, string cmdName)
     {
         return new OutboundMessage
         {
@@ -96,7 +96,7 @@ public sealed class CommandMode : IConnectionMode
     /// <summary>
     /// Prepares a Progress message (interim update).
     /// </summary>
-    public OutboundMessage PrepareProgress(string connectionName, byte[] payload, string cmdName)
+    public OutboundMessage PrepareProgress(string connectionName, ReadOnlyMemory<byte> payload, string cmdName)
     {
         return new OutboundMessage
         {

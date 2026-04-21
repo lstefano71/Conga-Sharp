@@ -24,7 +24,7 @@ public sealed class RawMode : IConnectionMode
     public IReadOnlyList<CongaEvent> OnFrameReceived(string connectionName, FrameData frame)
         => throw new InvalidOperationException("Raw mode does not use framing");
 
-    public OutboundMessage PrepareOutbound(string connectionName, byte[] payload, byte[]? userHeaders, PostSendAction closeFlag, string? cmdName)
+    public OutboundMessage PrepareOutbound(string connectionName, ReadOnlyMemory<byte> payload, byte[]? userHeaders, PostSendAction closeFlag, string? cmdName)
     {
         // Raw mode ignores headers and command names
         if (closeFlag == PostSendAction.CloseCommand || closeFlag == PostSendAction.EmitSentEvent)

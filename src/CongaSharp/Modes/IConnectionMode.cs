@@ -32,7 +32,7 @@ public interface IConnectionMode
     /// For unframed modes: returns raw bytes.
     /// For framed modes: returns frame metadata (payload, headers, msgType, cmdName).
     /// </summary>
-    OutboundMessage PrepareOutbound(string connectionName, byte[] payload, byte[]? userHeaders, PostSendAction closeFlag, string? cmdName);
+    OutboundMessage PrepareOutbound(string connectionName, ReadOnlyMemory<byte> payload, byte[]? userHeaders, PostSendAction closeFlag, string? cmdName);
 
     /// <summary>
     /// Called when the remote side disconnects.
@@ -66,8 +66,9 @@ public sealed class OutboundMessage
     /// <summary>
     /// For unframed modes: the raw bytes to write to socket.
     /// For framed modes: the payload bytes to include in the wire frame.
+    /// May reference a pooled buffer — only the slice defined by this Memory is valid.
     /// </summary>
-    public required byte[] Payload { get; init; }
+    public required ReadOnlyMemory<byte> Payload { get; init; }
 
     /// <summary>
     /// For framed modes: user headers to include. Null for unframed.

@@ -2,6 +2,7 @@ namespace CongaSharp.Core;
 
 using CongaSharp.Diagnostics;
 using CongaSharp.Events;
+using CongaSharp.Networking;
 using CongaSharp.Properties;
 
 /// <summary>
@@ -12,7 +13,8 @@ using CongaSharp.Properties;
 public sealed class Root : IDisposable
 {
     private readonly CancellationTokenSource _shutdownCts = new();
-    private int _disposed;
+    private int _shuttingDown;
+    private int _resourcesDisposed;
 
     public nint Handle { get; internal set; }
     public bool IsShuttingDown => _shutdownCts.IsCancellationRequested;
@@ -28,7 +30,7 @@ public sealed class Root : IDisposable
     /// </summary>
     public void Shutdown()
     {
-        if (Interlocked.CompareExchange(ref _disposed, 1, 0) == 0)
+        if (Interlocked.CompareExchange(ref _shuttingDown, 1, 0) == 0)
         {
             _shutdownCts.Cancel();
             Events.SignalShutdown();
@@ -38,6 +40,22 @@ public sealed class Root : IDisposable
     public void Dispose()
     {
         Shutdown();
+
+        if (Interlocked.CompareExchange(ref _resourcesDisposed, 1, 0) != 0)
+            return;
+
+        foreach (var obj in Registry.GetAllObjects())
+        {
+            try
+            {
+                if (obj is IAsyncDisposable ad)
+                    ad.DisposeAsync().GetAwaiter().GetResult();
+                else if (obj is ConnectionObject conn && conn.Pipeline != null)
+                    conn.Pipeline.DisposeAsync().GetAwaiter().GetResult();
+            }
+            catch { }
+        }
+
         Events.Dispose();
         Trace.Dispose();
         _shutdownCts.Dispose();

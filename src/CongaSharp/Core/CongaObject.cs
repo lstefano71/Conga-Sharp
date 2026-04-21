@@ -11,7 +11,19 @@ public abstract class CongaObject
     public string Name { get; }
     public ObjectType Type { get; }
     public CongaObject? Parent { get; }
-    public ObjectState State { get; protected internal set; } = ObjectState.Created;
+    private int _state = (int)ObjectState.Created;
+
+    public ObjectState State
+    {
+        get => (ObjectState)Volatile.Read(ref _state);
+        protected internal set => Volatile.Write(ref _state, (int)value);
+    }
+
+    /// <summary>
+    /// Atomically transitions from one state to another. Returns true if successful.
+    /// </summary>
+    protected bool TryTransition(ObjectState from, ObjectState to)
+        => Interlocked.CompareExchange(ref _state, (int)to, (int)from) == (int)from;
     public PropertyStore Properties { get; }
 
     private readonly ConcurrentDictionary<string, CongaObject> _children = new(StringComparer.OrdinalIgnoreCase);

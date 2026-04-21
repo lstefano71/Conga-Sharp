@@ -1,3 +1,4 @@
+using System.Buffers;
 using System.Runtime.InteropServices;
 using CongaSharp.Core;
 using CongaSharp.Errors;
@@ -172,13 +173,21 @@ public static partial class NativeExports
             if (evt.Type == EventType.Error)
                 return ErrorCodes.ShuttingDown;
 
-            // Write object name (string buffer — error if too small)
+            // Write object name (string buffer — re-enqueue if too small)
             var objRc = StringMarshaller.WriteToBuffer(evt.ObjectName, outObj, outObjCap);
-            if (objRc != ErrorCodes.Success) return objRc;
+            if (objRc != ErrorCodes.Success)
+            {
+                root.Events.ReEnqueue(evt);
+                return objRc;
+            }
 
-            // Write event name (string buffer — error if too small)
+            // Write event name (string buffer — re-enqueue if too small)
             var evtRc = StringMarshaller.WriteToBuffer(evt.EventName, outEvent, outEventCap);
-            if (evtRc != ErrorCodes.Success) return evtRc;
+            if (evtRc != ErrorCodes.Success)
+            {
+                root.Events.ReEnqueue(evt);
+                return evtRc;
+            }
 
             // Write event code
             if (outEventCode != null)
@@ -218,21 +227,38 @@ public static partial class NativeExports
             if (resolveError != ErrorCodes.Success) return resolveError;
             if (pipeline == null) return ErrorCodes.ObjectNotReady;
 
-            var payload = dataLen > 0 && data != null
-                ? new ReadOnlySpan<byte>(data, dataLen).ToArray()
-                : Array.Empty<byte>();
+            byte[]? rentedPayload = null;
+            try
+            {
+                ReadOnlyMemory<byte> payload;
+                if (dataLen > 0 && data != null)
+                {
+                    rentedPayload = ArrayPool<byte>.Shared.Rent(dataLen);
+                    new ReadOnlySpan<byte>(data, dataLen).CopyTo(rentedPayload);
+                    payload = new ReadOnlyMemory<byte>(rentedPayload, 0, dataLen);
+                }
+                else
+                {
+                    payload = ReadOnlyMemory<byte>.Empty;
+                }
 
-            byte[]? userHeaders = headersLen > 0 && headers != null
-                ? new ReadOnlySpan<byte>(headers, headersLen).ToArray()
-                : null;
+                byte[]? userHeaders = headersLen > 0 && headers != null
+                    ? new ReadOnlySpan<byte>(headers, headersLen).ToArray()
+                    : null;
 
-            var postAction = (PostSendAction)closeFlag;
-            var msg = pipeline.Mode.PrepareOutbound(connName, payload, userHeaders, postAction, cmdName);
-            if (msg.ErrorCode != 0) return msg.ErrorCode;
+                var postAction = (PostSendAction)closeFlag;
+                var msg = pipeline.Mode.PrepareOutbound(connName, payload, userHeaders, postAction, cmdName);
+                if (msg.ErrorCode != 0) return msg.ErrorCode;
 
-            pipeline.SendAsync(msg).GetAwaiter().GetResult();
+                pipeline.SendAsync(msg).GetAwaiter().GetResult();
 
-            HandlePostAction(root, nameStr, connName, msg.PostAction);
+                HandlePostAction(root, nameStr, connName, msg.PostAction);
+            }
+            finally
+            {
+                if (rentedPayload != null)
+                    ArrayPool<byte>.Shared.Return(rentedPayload);
+            }
 
             return ErrorCodes.Success;
         }
@@ -263,12 +289,29 @@ public static partial class NativeExports
             if (pipeline.Mode is not CommandMode commandMode)
                 return ErrorCodes.InvalidMode;
 
-            var payload = dataLen > 0 && data != null
-                ? new ReadOnlySpan<byte>(data, dataLen).ToArray()
-                : Array.Empty<byte>();
+            byte[]? rentedPayload = null;
+            try
+            {
+                ReadOnlyMemory<byte> payload;
+                if (dataLen > 0 && data != null)
+                {
+                    rentedPayload = ArrayPool<byte>.Shared.Rent(dataLen);
+                    new ReadOnlySpan<byte>(data, dataLen).CopyTo(rentedPayload);
+                    payload = new ReadOnlyMemory<byte>(rentedPayload, 0, dataLen);
+                }
+                else
+                {
+                    payload = ReadOnlyMemory<byte>.Empty;
+                }
 
-            var msg = commandMode.PrepareRespond(connName, payload, cmdName);
-            pipeline.SendAsync(msg).GetAwaiter().GetResult();
+                var msg = commandMode.PrepareRespond(connName, payload, cmdName);
+                pipeline.SendAsync(msg).GetAwaiter().GetResult();
+            }
+            finally
+            {
+                if (rentedPayload != null)
+                    ArrayPool<byte>.Shared.Return(rentedPayload);
+            }
 
             // Close command object if registered
             root.Registry.TryRemove(nameStr, out _);
@@ -302,12 +345,29 @@ public static partial class NativeExports
             if (pipeline.Mode is not CommandMode commandMode)
                 return ErrorCodes.InvalidMode;
 
-            var payload = dataLen > 0 && data != null
-                ? new ReadOnlySpan<byte>(data, dataLen).ToArray()
-                : Array.Empty<byte>();
+            byte[]? rentedPayload = null;
+            try
+            {
+                ReadOnlyMemory<byte> payload;
+                if (dataLen > 0 && data != null)
+                {
+                    rentedPayload = ArrayPool<byte>.Shared.Rent(dataLen);
+                    new ReadOnlySpan<byte>(data, dataLen).CopyTo(rentedPayload);
+                    payload = new ReadOnlyMemory<byte>(rentedPayload, 0, dataLen);
+                }
+                else
+                {
+                    payload = ReadOnlyMemory<byte>.Empty;
+                }
 
-            var msg = commandMode.PrepareProgress(connName, payload, cmdName);
-            pipeline.SendAsync(msg).GetAwaiter().GetResult();
+                var msg = commandMode.PrepareProgress(connName, payload, cmdName);
+                pipeline.SendAsync(msg).GetAwaiter().GetResult();
+            }
+            finally
+            {
+                if (rentedPayload != null)
+                    ArrayPool<byte>.Shared.Return(rentedPayload);
+            }
 
             return ErrorCodes.Success;
         }

@@ -39,9 +39,12 @@ public struct FrameHeader
         buffer.Slice(8, 32).Clear();
         if (!string.IsNullOrEmpty(CmdName))
         {
-            var cmdBytes = Encoding.UTF8.GetBytes(CmdName);
-            var len = Math.Min(cmdBytes.Length, 31); // leave room for null
-            cmdBytes.AsSpan(0, len).CopyTo(buffer.Slice(8, 32));
+            var cmdSpan = CmdName.AsSpan();
+            // Truncate to fit in 31 bytes (leave room for null terminator)
+            while (cmdSpan.Length > 0 && Encoding.UTF8.GetByteCount(cmdSpan) > 31)
+                cmdSpan = cmdSpan[..^1];
+            if (cmdSpan.Length > 0)
+                Encoding.UTF8.GetBytes(cmdSpan, buffer.Slice(8, 32));
         }
 
         BinaryPrimitives.WriteUInt32LittleEndian(buffer[40..], HeadersLen);

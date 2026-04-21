@@ -32,7 +32,7 @@ public sealed class BlkRawMode : IConnectionMode
         }];
     }
 
-    public OutboundMessage PrepareOutbound(string connectionName, byte[] payload, byte[]? userHeaders, PostSendAction closeFlag, string? cmdName)
+    public OutboundMessage PrepareOutbound(string connectionName, ReadOnlyMemory<byte> payload, byte[]? userHeaders, PostSendAction closeFlag, string? cmdName)
     {
         if (closeFlag == PostSendAction.CloseCommand)
             return new OutboundMessage { Payload = payload, ErrorCode = Errors.ErrorCodes.InvalidMode };

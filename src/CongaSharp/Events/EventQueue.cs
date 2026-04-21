@@ -9,7 +9,10 @@ using CongaSharp.Errors;
 /// </summary>
 public sealed class EventQueue : IDisposable
 {
-    private readonly List<CongaEvent> _events = new();
+    private static readonly byte[] ShutdownPayload =
+        System.Text.Encoding.UTF8.GetBytes($"{{\"error\":{ErrorCodes.ShuttingDown}}}");
+
+    private readonly LinkedList<CongaEvent> _events = new();
     private readonly object _lock = new();
     private readonly SemaphoreSlim _signal = new(0);
     private volatile bool _shutdown;
@@ -31,7 +34,7 @@ public sealed class EventQueue : IDisposable
 
         lock (_lock)
         {
-            _events.Add(evt);
+            _events.AddLast(evt);
         }
 
         // Release enough permits for all potential waiters to re-scan.
@@ -58,14 +61,15 @@ public sealed class EventQueue : IDisposable
             // Scan for a matching event under the lock
             lock (_lock)
             {
-                for (int i = 0; i < _events.Count; i++)
+                var node = _events.First;
+                while (node != null)
                 {
-                    var evt = _events[i];
-                    if (matchAll || IsMatch(evt.ObjectName, objectFilter!))
+                    if (matchAll || IsMatch(node.Value.ObjectName, objectFilter!))
                     {
-                        _events.RemoveAt(i);
-                        return evt;
+                        _events.Remove(node);
+                        return node.Value;
                     }
+                    node = node.Next;
                 }
             }
 
@@ -105,6 +109,20 @@ public sealed class EventQueue : IDisposable
         try { _signal.Release(100); } catch (ObjectDisposedException) { }
     }
 
+    /// <summary>
+    /// Re-enqueues an event at the front of the queue.
+    /// Used when a dequeued event cannot be delivered (e.g., buffer too small).
+    /// </summary>
+    public void ReEnqueue(CongaEvent evt)
+    {
+        if (_shutdown) return;
+        lock (_lock)
+        {
+            _events.AddFirst(evt);
+        }
+        try { _signal.Release(); } catch (ObjectDisposedException) { }
+    }
+
     public void Dispose()
     {
         SignalShutdown();
@@ -134,6 +152,6 @@ public sealed class EventQueue : IDisposable
     {
         ObjectName = objectFilter ?? ".",
         Type = EventType.Error,
-        Payload = System.Text.Encoding.UTF8.GetBytes($"{{\"error\":{ErrorCodes.ShuttingDown}}}")
+        Payload = ShutdownPayload
     };
 }

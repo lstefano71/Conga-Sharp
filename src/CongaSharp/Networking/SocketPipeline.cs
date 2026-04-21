@@ -24,6 +24,7 @@ public sealed class SocketPipeline : IAsyncDisposable
     private readonly TraceLogger _trace;
     private readonly SemaphoreSlim _writeLock = new(1, 1);
     private Task? _readLoopTask;
+    private int _disposed;
 
     public SocketPipeline(
         Socket socket,
@@ -93,6 +94,9 @@ public sealed class SocketPipeline : IAsyncDisposable
 
     public async ValueTask DisposeAsync()
     {
+        if (Interlocked.CompareExchange(ref _disposed, 1, 0) != 0)
+            return;
+
         await _cts.CancelAsync().ConfigureAwait(false);
 
         if (_readLoopTask != null)
@@ -180,7 +184,7 @@ public sealed class SocketPipeline : IAsyncDisposable
                     MsgType = result.Header.MsgType,
                     CmdName = result.Header.CmdName,
                     Payload = result.Payload,
-                    UserHeaders = result.UserHeaders
+                    UserHeaders = result.UserHeaders ?? new Dictionary<string, byte[]>()
                 };
 
                 var events = _mode.OnFrameReceived(_connectionName, frameData);

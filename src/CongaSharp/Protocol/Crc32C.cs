@@ -51,12 +51,35 @@ public static class Crc32C
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static uint Compute(ReadOnlySpan<byte> data)
     {
-        return Sse42.IsSupported ? ComputeHardware(data) : ComputeSoftware(data);
+        return ComputePartial(data, 0xFFFFFFFFu) ^ 0xFFFFFFFFu;
     }
 
-    private static uint ComputeHardware(ReadOnlySpan<byte> data)
+    /// <summary>
+    /// Computes CRC-32C over two contiguous spans without allocating a combined buffer.
+    /// </summary>
+    public static uint Compute(ReadOnlySpan<byte> first, ReadOnlySpan<byte> second)
     {
-        uint crc = 0xFFFFFFFFu;
+        uint crc = ComputePartial(first, 0xFFFFFFFFu);
+        crc = ComputePartial(second, crc);
+        return crc ^ 0xFFFFFFFFu;
+    }
+
+    /// <summary>
+    /// Computes CRC-32C of user headers + payload without allocating a combined buffer.
+    /// </summary>
+    public static uint ComputePayloadCrc(ReadOnlySpan<byte> headers, ReadOnlySpan<byte> payload)
+        => Compute(headers, payload);
+
+    /// <summary>
+    /// Runs hardware or software CRC path without final XOR, enabling chaining across spans.
+    /// </summary>
+    private static uint ComputePartial(ReadOnlySpan<byte> data, uint crc)
+    {
+        return Sse42.IsSupported ? ComputeHardware(data, crc) : ComputeSoftware(data, crc);
+    }
+
+    private static uint ComputeHardware(ReadOnlySpan<byte> data, uint crc)
+    {
         int i = 0;
 
         // Process 8 bytes at a time if 64-bit SSE4.2 is available
@@ -85,14 +108,13 @@ public static class Crc32C
             i++;
         }
 
-        return crc ^ 0xFFFFFFFFu;
+        return crc;
     }
 
-    private static uint ComputeSoftware(ReadOnlySpan<byte> data)
+    private static uint ComputeSoftware(ReadOnlySpan<byte> data, uint crc)
     {
-        uint crc = 0xFFFFFFFFu;
         foreach (byte b in data)
             crc = (crc >> 8) ^ Table[(byte)(crc ^ b)];
-        return crc ^ 0xFFFFFFFFu;
+        return crc;
     }
 }

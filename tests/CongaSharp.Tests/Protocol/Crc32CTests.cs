@@ -1,5 +1,6 @@
 namespace CongaSharp.Tests.Protocol;
 
+using System.Linq;
 using CongaSharp.Protocol;
 using Xunit;
 
@@ -49,5 +50,30 @@ public class Crc32CTests
     public void ComputeHeaderCrc_TooShort_Throws()
     {
         Assert.Throws<ArgumentException>(() => Crc32C.ComputeHeaderCrc(new byte[10]));
+    }
+
+    [Fact]
+    public void ChainedCrc_MatchesSingleBuffer()
+    {
+        var part1 = new byte[] { 1, 2, 3, 4, 5 };
+        var part2 = new byte[] { 6, 7, 8, 9, 10 };
+        var combined = part1.Concat(part2).ToArray();
+
+        var singleCrc = Crc32C.Compute(combined);
+        var chainedCrc = Crc32C.Compute(part1, part2);
+        Assert.Equal(singleCrc, chainedCrc);
+    }
+
+    [Fact]
+    public void ChainedPayloadCrc_MatchesSingleBuffer()
+    {
+        var headers = new byte[] { 0x01, 0x02, 0x03 };
+        var payload = new byte[1000];
+        Random.Shared.NextBytes(payload);
+        var combined = headers.Concat(payload).ToArray();
+
+        var singleCrc = Crc32C.ComputePayloadCrc(combined);
+        var chainedCrc = Crc32C.ComputePayloadCrc(headers, payload);
+        Assert.Equal(singleCrc, chainedCrc);
     }
 }

@@ -23,6 +23,7 @@ public sealed class ServerObject : CongaObject, IAsyncDisposable
     private Socket? _listener;
     private Task? _acceptLoopTask;
     private Root? _root;
+    private int _disposed;
 
     public ServerObject(string name, string address, int port, string mode, int bufferSize, CongaObject? parent = null)
         : base(name, ObjectType.Server, parent)
@@ -40,7 +41,7 @@ public sealed class ServerObject : CongaObject, IAsyncDisposable
     /// </summary>
     public int Start(Root root)
     {
-        if (State != ObjectState.Created)
+        if (!TryTransition(ObjectState.Created, ObjectState.Started))
             return ErrorCodes.ObjectAlreadyStarted;
 
         _root = root;
@@ -72,7 +73,6 @@ public sealed class ServerObject : CongaObject, IAsyncDisposable
             Properties.SetInternal("LocalAddr", $"[\"{localEp.Address}\",{localEp.Port}]");
             Properties.SetInternal("LocalPort", localEp.Port.ToString());
 
-            State = ObjectState.Started;
             root.Trace.LogConnection($"Server {Name} listening on {localEp}");
 
             // Start accept loop
@@ -82,11 +82,17 @@ public sealed class ServerObject : CongaObject, IAsyncDisposable
         }
         catch (SocketException ex)
         {
+            _listener?.Dispose();
+            _listener = null;
+            State = ObjectState.Created;
             root.Trace.LogException(ex);
             return ErrorCodes.BindFailed;
         }
         catch (Exception ex)
         {
+            _listener?.Dispose();
+            _listener = null;
+            State = ObjectState.Created;
             root.Trace.LogException(ex);
             return ErrorCodes.BindFailed;
         }
@@ -94,6 +100,9 @@ public sealed class ServerObject : CongaObject, IAsyncDisposable
 
     public async ValueTask DisposeAsync()
     {
+        if (Interlocked.CompareExchange(ref _disposed, 1, 0) != 0)
+            return;
+
         State = ObjectState.Closed;
 
         // Close the listener to unblock AcceptAsync
@@ -133,40 +142,50 @@ public sealed class ServerObject : CongaObject, IAsyncDisposable
                     break;
                 }
 
-                // Create connection object
-                var connName = root.Registry.GenerateConnectionName(Name);
-                var conn = new ConnectionObject(connName, this);
-                root.Registry.TryAdd(conn);
-                TryAddChild(conn);
-
-                // Set connection properties from peer info
-                var remoteEp = clientSocket.RemoteEndPoint as IPEndPoint;
-                var localEp = clientSocket.LocalEndPoint as IPEndPoint;
-                if (remoteEp != null)
-                    conn.Properties.SetInternal("PeerAddr", $"[\"{remoteEp.Address}\",{remoteEp.Port}]");
-                if (localEp != null)
-                    conn.Properties.SetInternal("LocalAddr", $"[\"{localEp.Address}\",{localEp.Port}]");
-
-                // Create mode instance for this connection
-                var mode = ModeFactory.Create(ModeKind);
-                ConfigureMode(mode);
-
-                // Create and start pipeline
-                var pipeline = new SocketPipeline(
-                    clientSocket, mode, root.Events, connName,
-                    BufferSize, root.ShutdownToken, root.Trace);
-                conn.Pipeline = pipeline;
-                conn.State = ObjectState.Started;
-                pipeline.StartReadLoop();
-
-                // Enqueue Connect event
-                root.Events.Enqueue(new CongaEvent
+                try
                 {
-                    ObjectName = connName,
-                    Type = EventType.Connect
-                });
+                    // Create connection object
+                    var connName = root.Registry.GenerateConnectionName(Name);
+                    var conn = new ConnectionObject(connName, this);
+                    root.Registry.TryAdd(conn);
+                    TryAddChild(conn);
 
-                root.Trace.LogConnection($"Accepted connection {connName} from {remoteEp}");
+                    // Set connection properties from peer info
+                    var remoteEp = clientSocket.RemoteEndPoint as IPEndPoint;
+                    var localEp = clientSocket.LocalEndPoint as IPEndPoint;
+                    if (remoteEp != null)
+                        conn.Properties.SetInternal("PeerAddr", $"[\"{remoteEp.Address}\",{remoteEp.Port}]");
+                    if (localEp != null)
+                        conn.Properties.SetInternal("LocalAddr", $"[\"{localEp.Address}\",{localEp.Port}]");
+
+                    // Create mode instance for this connection
+                    var mode = ModeFactory.Create(ModeKind);
+                    ConfigureMode(mode);
+
+                    // Create and start pipeline
+                    var pipeline = new SocketPipeline(
+                        clientSocket, mode, root.Events, connName,
+                        BufferSize, root.ShutdownToken, root.Trace);
+                    conn.Pipeline = pipeline;
+                    conn.State = ObjectState.Started;
+                    pipeline.StartReadLoop();
+
+                    // Enqueue Connect event
+                    root.Events.Enqueue(new CongaEvent
+                    {
+                        ObjectName = connName,
+                        Type = EventType.Connect
+                    });
+
+                    root.Trace.LogConnection($"Accepted connection {connName} from {remoteEp}");
+                }
+                catch (Exception ex)
+                {
+                    // Dispose the accepted socket if anything fails during setup
+                    try { clientSocket.Dispose(); } catch { }
+                    root.Trace.LogException(ex);
+                    continue;
+                }
             }
         }
         catch (OperationCanceledException)

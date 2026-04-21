@@ -1,5 +1,6 @@
 namespace CongaSharp.Networking;
 
+using System.Buffers;
 using System.Buffers.Binary;
 using CongaSharp.Errors;
 using CongaSharp.Protocol;
@@ -17,84 +18,94 @@ public static class AsyncFrameIO
     public static async Task<FrameReadResult> ReadFrameAsync(
         Stream stream, CancellationToken ct, int maxPayloadSize = 64 * 1024 * 1024)
     {
-        // Stage 1: Read 52-byte header
-        var headerBuf = new byte[FrameHeader.Size];
-        var bytesRead = await ReadExactAsync(stream, headerBuf, ct).ConfigureAwait(false);
-        if (bytesRead < FrameHeader.Size)
-            return new FrameReadResult { ErrorCode = ErrorCodes.SocketClosed };
-
-        // Stage 2: Validate header CRC
-        var expectedCrc = Crc32C.ComputeHeaderCrc(headerBuf.AsSpan(0, FrameHeader.CrcOffset));
-        var actualCrc = BinaryPrimitives.ReadUInt32LittleEndian(headerBuf.AsSpan(FrameHeader.CrcOffset));
-        if (expectedCrc != actualCrc)
-            return new FrameReadResult { ErrorCode = ErrorCodes.CrcFailure };
-
-        var header = FrameHeader.ReadFrom(headerBuf);
-
-        // Stage 3: Validate payload size
-        if (header.PayloadLen > maxPayloadSize)
-            return new FrameReadResult { ErrorCode = ErrorCodes.BufferExceeded, Header = header };
-
-        // Stage 4: Read user headers
-        var headersBytes = Array.Empty<byte>();
-        if (header.HeadersLen > 0)
-        {
-            headersBytes = new byte[header.HeadersLen];
-            if (await ReadExactAsync(stream, headersBytes, ct).ConfigureAwait(false) < (int)header.HeadersLen)
-                return new FrameReadResult { ErrorCode = ErrorCodes.SocketClosed, Header = header };
-        }
-
-        // Stage 5: Read compressed payload
-        var compressedPayload = Array.Empty<byte>();
-        if (header.PayloadLen > 0)
-        {
-            compressedPayload = new byte[header.PayloadLen];
-            if (await ReadExactAsync(stream, compressedPayload, ct).ConfigureAwait(false) < (int)header.PayloadLen)
-                return new FrameReadResult { ErrorCode = ErrorCodes.SocketClosed, Header = header };
-        }
-
-        // Stage 6: Validate payload CRC if present
-        if (FrameFlags.GetHasPayloadCrc(header.Flags))
-        {
-            var crcBuf = new byte[4];
-            if (await ReadExactAsync(stream, crcBuf, ct).ConfigureAwait(false) < 4)
-                return new FrameReadResult { ErrorCode = ErrorCodes.SocketClosed, Header = header };
-
-            var expectedPayloadCrc = BinaryPrimitives.ReadUInt32LittleEndian(crcBuf);
-
-            var combined = new byte[headersBytes.Length + compressedPayload.Length];
-            headersBytes.CopyTo(combined, 0);
-            compressedPayload.CopyTo(combined, headersBytes.Length);
-
-            var actualPayloadCrc = Crc32C.ComputePayloadCrc(combined);
-            if (expectedPayloadCrc != actualPayloadCrc)
-                return new FrameReadResult { ErrorCode = ErrorCodes.CrcFailure, Header = header };
-        }
-
-        // Stage 7: Decompress payload
-        byte[] payload;
+        var pool = ArrayPool<byte>.Shared;
+        var headerBuf = pool.Rent(FrameHeader.Size);
         try
         {
-            var algo = FrameFlags.GetCompression(header.Flags);
-            payload = Compression.Decompress(algo, compressedPayload);
-        }
-        catch
-        {
-            return new FrameReadResult { ErrorCode = ErrorCodes.CompressionError, Header = header };
-        }
+            // Stage 1: Read 52-byte header
+            var bytesRead = await ReadExactAsync(stream, headerBuf, FrameHeader.Size, ct).ConfigureAwait(false);
+            if (bytesRead < FrameHeader.Size)
+                return new FrameReadResult { ErrorCode = ErrorCodes.SocketClosed };
 
-        // Stage 8: Decode user headers
-        var userHeaders = FrameFlags.GetHasUserHeaders(header.Flags) && headersBytes.Length > 0
-            ? UserHeaders.Decode(headersBytes)
-            : new Dictionary<string, byte[]>();
+            // Stage 2: Validate header CRC
+            var expectedCrc = Crc32C.ComputeHeaderCrc(headerBuf.AsSpan(0, FrameHeader.CrcOffset));
+            var actualCrc = BinaryPrimitives.ReadUInt32LittleEndian(headerBuf.AsSpan(FrameHeader.CrcOffset));
+            if (expectedCrc != actualCrc)
+                return new FrameReadResult { ErrorCode = ErrorCodes.CrcFailure };
 
-        return new FrameReadResult
+            var header = FrameHeader.ReadFrom(headerBuf);
+
+            // Stage 3: Validate payload size
+            if (header.PayloadLen > maxPayloadSize)
+                return new FrameReadResult { ErrorCode = ErrorCodes.BufferExceeded, Header = header };
+
+            // Stage 4: Read user headers (keep as new byte[] — owned by FrameReadResult)
+            var headersBytes = Array.Empty<byte>();
+            if (header.HeadersLen > 0)
+            {
+                headersBytes = new byte[header.HeadersLen];
+                if (await ReadExactAsync(stream, headersBytes, (int)header.HeadersLen, ct).ConfigureAwait(false) < (int)header.HeadersLen)
+                    return new FrameReadResult { ErrorCode = ErrorCodes.SocketClosed, Header = header };
+            }
+
+            // Stage 5: Read compressed payload (keep as new byte[] — owned by FrameReadResult)
+            var compressedPayload = Array.Empty<byte>();
+            if (header.PayloadLen > 0)
+            {
+                compressedPayload = new byte[header.PayloadLen];
+                if (await ReadExactAsync(stream, compressedPayload, (int)header.PayloadLen, ct).ConfigureAwait(false) < (int)header.PayloadLen)
+                    return new FrameReadResult { ErrorCode = ErrorCodes.SocketClosed, Header = header };
+            }
+
+            // Stage 6: Validate payload CRC if present
+            if (FrameFlags.GetHasPayloadCrc(header.Flags))
+            {
+                var crcBuf = pool.Rent(4);
+                try
+                {
+                    if (await ReadExactAsync(stream, crcBuf, 4, ct).ConfigureAwait(false) < 4)
+                        return new FrameReadResult { ErrorCode = ErrorCodes.SocketClosed, Header = header };
+
+                    var expectedPayloadCrc = BinaryPrimitives.ReadUInt32LittleEndian(crcBuf.AsSpan(0, 4));
+                    var actualPayloadCrc = Crc32C.ComputePayloadCrc(headersBytes, compressedPayload);
+                    if (expectedPayloadCrc != actualPayloadCrc)
+                        return new FrameReadResult { ErrorCode = ErrorCodes.CrcFailure, Header = header };
+                }
+                finally
+                {
+                    pool.Return(crcBuf);
+                }
+            }
+
+            // Stage 7: Decompress payload
+            byte[] payload;
+            try
+            {
+                var algo = FrameFlags.GetCompression(header.Flags);
+                payload = Compression.Decompress(algo, compressedPayload);
+            }
+            catch (Exception)
+            {
+                return new FrameReadResult { ErrorCode = ErrorCodes.CompressionError, Header = header };
+            }
+
+            // Stage 8: Decode user headers
+            var userHeaders = FrameFlags.GetHasUserHeaders(header.Flags) && headersBytes.Length > 0
+                ? UserHeaders.Decode(headersBytes)
+                : new Dictionary<string, byte[]>();
+
+            return new FrameReadResult
+            {
+                ErrorCode = ErrorCodes.Success,
+                Header = header,
+                Payload = payload,
+                UserHeaders = userHeaders
+            };
+        }
+        finally
         {
-            ErrorCode = ErrorCodes.Success,
-            Header = header,
-            Payload = payload,
-            UserHeaders = userHeaders
-        };
+            pool.Return(headerBuf);
+        }
     }
 
     /// <summary>
@@ -104,7 +115,7 @@ public static class AsyncFrameIO
         Stream stream,
         MsgType msgType,
         string cmdName,
-        byte[] payload,
+        ReadOnlyMemory<byte> payload,
         Dictionary<string, byte[]>? userHeaders,
         CompressionAlgorithm compression,
         uint magic,
@@ -132,43 +143,62 @@ public static class AsyncFrameIO
             HeaderCrc = 0
         };
 
-        var headerBuf = new byte[FrameHeader.Size];
-        header.WriteTo(headerBuf);
+        // Calculate total frame size: header + user headers + payload + CRC
+        int crcSize = includePayloadCrc ? 4 : 0;
+        int totalSize = FrameHeader.Size + headersBytes.Length + compressedPayload.Length + crcSize;
 
-        var headerCrc = Crc32C.ComputeHeaderCrc(headerBuf.AsSpan(0, FrameHeader.CrcOffset));
-        BinaryPrimitives.WriteUInt32LittleEndian(headerBuf.AsSpan(FrameHeader.CrcOffset), headerCrc);
-
-        await stream.WriteAsync(headerBuf, ct).ConfigureAwait(false);
-
-        if (headersBytes.Length > 0)
-            await stream.WriteAsync(headersBytes, ct).ConfigureAwait(false);
-
-        if (compressedPayload.Length > 0)
-            await stream.WriteAsync(compressedPayload, ct).ConfigureAwait(false);
-
-        if (includePayloadCrc)
+        var pool = ArrayPool<byte>.Shared;
+        var frameBuf = pool.Rent(totalSize);
+        try
         {
-            var combinedLen = headersBytes.Length + compressedPayload.Length;
-            var combined = new byte[combinedLen];
-            headersBytes.CopyTo(combined, 0);
-            compressedPayload.CopyTo(combined, headersBytes.Length);
+            var span = frameBuf.AsSpan();
 
-            var payloadCrc = Crc32C.ComputePayloadCrc(combined);
-            var crcBuf = new byte[4];
-            BinaryPrimitives.WriteUInt32LittleEndian(crcBuf, payloadCrc);
-            await stream.WriteAsync(crcBuf, ct).ConfigureAwait(false);
+            // Write header (52 bytes)
+            header.WriteTo(span[..FrameHeader.Size]);
+            var headerCrc = Crc32C.ComputeHeaderCrc(span[..FrameHeader.CrcOffset]);
+            BinaryPrimitives.WriteUInt32LittleEndian(span.Slice(FrameHeader.CrcOffset, 4), headerCrc);
+
+            int offset = FrameHeader.Size;
+
+            // Write user headers
+            if (headersBytes.Length > 0)
+            {
+                headersBytes.CopyTo(span[offset..]);
+                offset += headersBytes.Length;
+            }
+
+            // Write compressed payload
+            if (compressedPayload.Length > 0)
+            {
+                compressedPayload.Span.CopyTo(span[offset..]);
+                offset += compressedPayload.Length;
+            }
+
+            // Write payload CRC
+            if (includePayloadCrc)
+            {
+                var payloadCrc = Crc32C.ComputePayloadCrc(headersBytes, compressedPayload.Span);
+                BinaryPrimitives.WriteUInt32LittleEndian(span.Slice(offset, 4), payloadCrc);
+                offset += 4;
+            }
+
+            // Single write for the entire frame
+            await stream.WriteAsync(frameBuf.AsMemory(0, totalSize), ct).ConfigureAwait(false);
+            await stream.FlushAsync(ct).ConfigureAwait(false);
         }
-
-        await stream.FlushAsync(ct).ConfigureAwait(false);
+        finally
+        {
+            pool.Return(frameBuf);
+        }
     }
 
-    private static async Task<int> ReadExactAsync(Stream stream, byte[] buffer, CancellationToken ct)
+    private static async Task<int> ReadExactAsync(Stream stream, byte[] buffer, int count, CancellationToken ct)
     {
         int totalRead = 0;
-        while (totalRead < buffer.Length)
+        while (totalRead < count)
         {
             var read = await stream.ReadAsync(
-                buffer.AsMemory(totalRead, buffer.Length - totalRead), ct).ConfigureAwait(false);
+                buffer.AsMemory(totalRead, count - totalRead), ct).ConfigureAwait(false);
             if (read == 0) break;
             totalRead += read;
         }

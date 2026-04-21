@@ -71,14 +71,23 @@ public sealed class ObjectRegistry
         var removed = new List<CongaObject>();
         var prefix = name + ".";
 
-        foreach (var key in _objects.Keys.ToList())
+        // Loop to catch items added between snapshot and removal
+        bool foundAny;
+        do
         {
-            if (key.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+            foundAny = false;
+            foreach (var key in _objects.Keys.ToList())
             {
-                if (_objects.TryRemove(key, out var child))
-                    removed.Add(child);
+                if (key.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+                {
+                    if (_objects.TryRemove(key, out var child))
+                    {
+                        removed.Add(child);
+                        foundAny = true;
+                    }
+                }
             }
-        }
+        } while (foundAny);
 
         if (_objects.TryRemove(name, out var obj))
             removed.Add(obj);

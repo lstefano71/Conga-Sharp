@@ -57,12 +57,7 @@ public static class FrameWriter
 
         if (includePayloadCrc)
         {
-            var combinedLen = headersBytes.Length + compressedPayload.Length;
-            var combined = new byte[combinedLen];
-            headersBytes.CopyTo(combined, 0);
-            compressedPayload.CopyTo(combined, headersBytes.Length);
-
-            var payloadCrc = Crc32C.ComputePayloadCrc(combined);
+            var payloadCrc = Crc32C.ComputePayloadCrc(headersBytes, compressedPayload);
             Span<byte> crcBuf = stackalloc byte[4];
             BinaryPrimitives.WriteUInt32LittleEndian(crcBuf, payloadCrc);
             stream.Write(crcBuf);

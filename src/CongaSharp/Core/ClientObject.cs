@@ -17,6 +17,7 @@ public sealed class ClientObject : CongaObject, IAsyncDisposable
 
     private SocketPipeline? _pipeline;
     private Root? _root;
+    private int _disposed;
 
     public SocketPipeline? Pipeline => _pipeline;
 
@@ -36,11 +37,12 @@ public sealed class ClientObject : CongaObject, IAsyncDisposable
     /// </summary>
     public async Task<int> ConnectAsync(Root root, int timeoutMs)
     {
-        if (State != ObjectState.Created)
+        if (!TryTransition(ObjectState.Created, ObjectState.Started))
             return ErrorCodes.ObjectAlreadyStarted;
 
         _root = root;
 
+        Socket? socket = null;
         try
         {
             var protocol = "IPv4";
@@ -51,7 +53,7 @@ public sealed class ClientObject : CongaObject, IAsyncDisposable
             bool preferIPv6 = protocol.Equals("IPv6", StringComparison.OrdinalIgnoreCase);
             var ipAddress = await DnsResolver.ResolveAsync(Address, preferIPv6).ConfigureAwait(false);
 
-            var socket = new Socket(ipAddress.AddressFamily, SocketType.Stream, ProtocolType.Tcp);
+            socket = new Socket(ipAddress.AddressFamily, SocketType.Stream, ProtocolType.Tcp);
 
             using var timeoutCts = new CancellationTokenSource(timeoutMs);
             using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(
@@ -63,14 +65,12 @@ public sealed class ClientObject : CongaObject, IAsyncDisposable
             }
             catch (OperationCanceledException)
             {
-                socket.Dispose();
                 if (root.ShutdownToken.IsCancellationRequested)
                     return ErrorCodes.ShuttingDown;
                 return ErrorCodes.Timeout;
             }
             catch (SocketException)
             {
-                socket.Dispose();
                 return ErrorCodes.ConnectFailed;
             }
 
@@ -90,8 +90,8 @@ public sealed class ClientObject : CongaObject, IAsyncDisposable
             _pipeline = new SocketPipeline(
                 socket, mode, root.Events, Name,
                 BufferSize, root.ShutdownToken, root.Trace);
+            socket = null; // Ownership transferred to pipeline
 
-            State = ObjectState.Started;
             _pipeline.StartReadLoop();
 
             root.Trace.LogConnection($"Client {Name} connected to {remoteEp}");
@@ -100,18 +100,27 @@ public sealed class ClientObject : CongaObject, IAsyncDisposable
         }
         catch (SocketException ex)
         {
+            State = ObjectState.Created;
             root.Trace.LogException(ex);
             return ErrorCodes.ConnectFailed;
         }
         catch (Exception ex)
         {
+            State = ObjectState.Created;
             root.Trace.LogException(ex);
             return ErrorCodes.ConnectFailed;
+        }
+        finally
+        {
+            socket?.Dispose();
         }
     }
 
     public async ValueTask DisposeAsync()
     {
+        if (Interlocked.CompareExchange(ref _disposed, 1, 0) != 0)
+            return;
+
         State = ObjectState.Closed;
 
         if (_pipeline != null)

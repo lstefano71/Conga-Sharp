@@ -12,10 +12,26 @@ public sealed class CongaEvent
     public byte[] UserHeaders { get; init; } = Array.Empty<byte>();
     public DateTime Timestamp { get; init; } = DateTime.UtcNow;
 
+    private static readonly string[] EventTypeNames = Enum.GetValues<EventType>()
+        .OrderBy(e => (int)e)
+        .Select(e => e.ToString())
+        .ToArray();
+
+    private static readonly int MinEventValue = (int)Enum.GetValues<EventType>().Min();
+
     /// <summary>
-    /// Human-readable event name for the C API output.
+    /// Human-readable event name for the C API output. Cached to avoid per-call allocation.
     /// </summary>
-    public string EventName => Type.ToString();
+    public string EventName
+    {
+        get
+        {
+            int index = (int)Type - MinEventValue;
+            return (index >= 0 && index < EventTypeNames.Length)
+                ? EventTypeNames[index]
+                : Type.ToString();
+        }
+    }
 
     /// <summary>
     /// Numeric event code for the C API output.

@@ -11,7 +11,7 @@ public sealed class FrameReadResult
     public int ErrorCode { get; init; }
     public FrameHeader Header { get; init; }
     public byte[] Payload { get; init; } = Array.Empty<byte>();
-    public Dictionary<string, byte[]> UserHeaders { get; init; } = new();
+    public Dictionary<string, byte[]>? UserHeaders { get; init; }
     public bool Success => ErrorCode == ErrorCodes.Success;
 }
 
@@ -71,11 +71,7 @@ public static class FrameReader
 
             var expectedPayloadCrc = BinaryPrimitives.ReadUInt32LittleEndian(crcBuf);
 
-            var combined = new byte[headersBytes.Length + compressedPayload.Length];
-            headersBytes.CopyTo(combined, 0);
-            compressedPayload.CopyTo(combined, headersBytes.Length);
-
-            var actualPayloadCrc = Crc32C.ComputePayloadCrc(combined);
+            var actualPayloadCrc = Crc32C.ComputePayloadCrc(headersBytes, compressedPayload);
             if (expectedPayloadCrc != actualPayloadCrc)
                 return new FrameReadResult { ErrorCode = ErrorCodes.CrcFailure, Header = header };
         }
@@ -87,7 +83,7 @@ public static class FrameReader
             var algo = FrameFlags.GetCompression(header.Flags);
             payload = Compression.Decompress(algo, compressedPayload);
         }
-        catch
+        catch (Exception)
         {
             return new FrameReadResult { ErrorCode = ErrorCodes.CompressionError, Header = header };
         }
