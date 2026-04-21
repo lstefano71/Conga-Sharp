@@ -11,7 +11,7 @@ public abstract class CongaObject
     public string Name { get; }
     public ObjectType Type { get; }
     public CongaObject? Parent { get; }
-    public ObjectState State { get; protected set; } = ObjectState.Created;
+    public ObjectState State { get; protected internal set; } = ObjectState.Created;
     public PropertyStore Properties { get; }
 
     private readonly ConcurrentDictionary<string, CongaObject> _children = new(StringComparer.OrdinalIgnoreCase);
