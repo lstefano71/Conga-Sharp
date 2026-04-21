@@ -91,6 +91,22 @@ public static partial class NativeExports
             var removed = root.Registry.RemoveTree(objName);
             if (removed.Count == 0) return ErrorCodes.InvalidName;
 
+            foreach (var obj in removed)
+            {
+                try
+                {
+                    if (obj is ServerObject server)
+                        server.DisposeAsync().GetAwaiter().GetResult();
+                    else if (obj is ClientObject client)
+                        client.DisposeAsync().GetAwaiter().GetResult();
+                    else if (obj is ConnectionObject conn && conn.Pipeline != null)
+                        conn.Pipeline.DisposeAsync().GetAwaiter().GetResult();
+                }
+                catch { }
+
+                obj.Parent?.TryRemoveChild(obj.Name);
+            }
+
             return ErrorCodes.Success;
         }
         catch { return -1; }

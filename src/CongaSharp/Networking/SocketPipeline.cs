@@ -16,6 +16,8 @@ public sealed class SocketPipeline : IAsyncDisposable
     private readonly NetworkStream _stream;
     private readonly IConnectionMode _mode;
     private readonly EventQueue _events;
+
+    internal IConnectionMode Mode => _mode;
     private readonly string _connectionName;
     private readonly CancellationTokenSource _cts;
     private readonly int _bufferSize;
