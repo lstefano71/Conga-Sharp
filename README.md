@@ -6,7 +6,7 @@ A reimplementation of Dyalog's Conga TCP/IP communication framework in C# 14 / .
 
 - **5 connection modes**: Raw, Text, BlkRaw, BlkText, Command
 - **Command mode RPC**: named commands with Progress and Respond
-- **New wire protocol**: 52-byte header, CRC-32C integrity (two-stage), per-message compression (Deflate/LZ4/Zstd), user-defined headers
+- **New wire protocol**: 52-byte header, CRC-32C integrity (two-stage), per-message compression (Deflate/LZ4/Zstd) with level control, user-defined headers
 - **Three-phase lifecycle**: create → configure → start (eliminates race conditions)
 - **Thread-safe**: concurrent APL threads supported
 - **Single native DLL**: no .NET runtime installation required
@@ -34,8 +34,7 @@ dotnet test
 ⍝ Load the cover namespace
 2 ⎕FIX 'file://path/to/apl/CongaSharp.apln'
 
-⍝ Point to the DLL (override DllPath if needed)
-⍝ CS.DllPath ← '/path/to/congasharp'
+⍝ Point to the DLL by editing CS.DllPath if needed
 
 ⍝ Bind ⎕NA declarations
 CS.Bind
@@ -73,7 +72,7 @@ cName ← CS.Clt h '' '127.0.0.1' 8080 'Command' 16384 5000
 
 ⍝ Send a command named 'Echo'
 payload ← ⎕UCS 'Hello server'
-CS.SendEx h cName payload ⍬ 0  ⍝ basic send, but command name comes from object hierarchy
+CS.SendEx h (cName,'.Echo') payload ⍬ 0 0 0
 
 ⍝ Wait for response
 obj evt code data hdrs ← CS.Wait h '' 5000
@@ -108,9 +107,9 @@ All functions return `int32` (0 = success). Structured output is JSON.
 | `conga_clt_create` | Create client (no I/O) |
 | `conga_clt_connect` | Connect client |
 | `conga_wait` | Wait for event |
-| `conga_send` | Send data |
-| `conga_respond` | Final command response |
-| `conga_progress` | Interim command progress |
+| `conga_send` | Send data (headers, close flag, compression, level) |
+| `conga_respond` | Final command response (compression, level) |
+| `conga_progress` | Interim command progress (compression, level) |
 | `conga_close` | Close object |
 | `conga_setprop` | Set property (JSON) |
 | `conga_getprop` | Get property (JSON) |
@@ -120,6 +119,10 @@ All functions return `int32` (0 = success). Structured output is JSON.
 | `conga_version` | Library version |
 
 See [docs/PRD.md](docs/PRD.md) for full API specification and [docs/implementation-plan.md](docs/implementation-plan.md) for architecture details.
+
+## Benchmarks
+
+Current benchmark snapshot and reproduction command: [docs/benchmarks.md](docs/benchmarks.md).
 
 ## Events
 
@@ -156,10 +159,11 @@ src/CongaSharp/          # Main library (NativeAOT)
   Errors/                # Error codes
   NativeExports.cs       # C API exports (query/property functions)
   NativeExportsNetworking.cs  # C API exports (networking functions)
-tests/CongaSharp.Tests/  # xUnit tests (232 tests)
+tests/CongaSharp.Tests/  # xUnit tests
 apl/CongaSharp.apln      # APL cover namespace
 docs/PRD.md              # Product Requirements Document
 docs/implementation-plan.md  # Implementation plan
+docs/benchmarks.md       # Current benchmark snapshot
 ```
 
 ## License

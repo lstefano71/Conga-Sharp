@@ -248,29 +248,45 @@ int32_t conga_send(
     int32_t    data_len,
     uint8_t*   headers,        // user-defined headers (NULL if none)
     int32_t    headers_len,
-    int32_t    close_flag      // 0=noop, 1=close conn, 2=close cmd, 3=Sent event
+    int32_t    close_flag,     // 0=noop, 1=close conn, 2=close cmd, 3=Sent event
+    int32_t    compression,    // 0=None, 1=Deflate, 2=LZ4, 3=Zstd
+    int32_t    compression_level
 );
 ```
 ```apl
-'I4 congasharp|conga_send P <0T <U1[] I4 <U1[] I4 I4'
+'I4 congasharp|conga_send P <0T <U1[] I4 <U1[] I4 I4 I4 I4'
 ```
 
 #### `conga_respond`
 Sends final response for a command (closes the command).
 ```c
-int32_t conga_respond(uintptr_t handle, wchar_t* name, uint8_t* data, int32_t data_len);
+int32_t conga_respond(
+    uintptr_t handle,
+    wchar_t*  name,
+    uint8_t*  data,
+    int32_t   data_len,
+    int32_t   compression,       // 0=None, 1=Deflate, 2=LZ4, 3=Zstd
+    int32_t   compression_level
+);
 ```
 ```apl
-'I4 congasharp|conga_respond P <0T <U1[] I4'
+'I4 congasharp|conga_respond P <0T <U1[] I4 I4 I4'
 ```
 
 #### `conga_progress`
 Sends an interim progress message for a command.
 ```c
-int32_t conga_progress(uintptr_t handle, wchar_t* name, uint8_t* data, int32_t data_len);
+int32_t conga_progress(
+    uintptr_t handle,
+    wchar_t*  name,
+    uint8_t*  data,
+    int32_t   data_len,
+    int32_t   compression,       // 0=None, 1=Deflate, 2=LZ4, 3=Zstd
+    int32_t   compression_level
+);
 ```
 ```apl
-'I4 congasharp|conga_progress P <0T <U1[] I4'
+'I4 congasharp|conga_progress P <0T <U1[] I4 I4 I4'
 ```
 
 #### `conga_close`

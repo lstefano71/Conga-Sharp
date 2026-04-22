@@ -7,8 +7,10 @@
 ⍝   CS.Srv h 'S1' '' 8080 'Command' 16384  ⍝ create + start server
 ⍝   CS.Clt h 'C1' '127.0.0.1' 8080 'Command' 16384 5000  ⍝ create + connect client
 ⍝   CS.Wait h '' 5000       ⍝ wait for next event
-⍝   CS.Send h 'C1' data     ⍝ send bytes
+⍝   CS.Send h 'C1' data     ⍝ send bytes (default compression)
+⍝   CS.SendEx h 'C1' data ⍬ 0 2 6  ⍝ send with headers/close/compression/level
 ⍝   CS.Respond h 'S1.CON0001.Echo' data   ⍝ respond to command
+⍝   CS.RespondEx h 'S1.CON0001.Echo' data 3 10  ⍝ compressed response
 ⍝   CS.Progress h 'S1.CON0001.Echo' data  ⍝ send interim progress
 ⍝   CS.Close h 'S1'         ⍝ close an object
 ⍝   CS.Shutdown h            ⍝ shutdown root
@@ -40,9 +42,9 @@
       ⎕NA'I4 ',DllPath,'|conga_clt_create P <0T <0T I4 <0T I4 >0T[] I4 >I4'
       ⎕NA'I4 ',DllPath,'|conga_clt_connect P <0T I4'
       ⎕NA'I4 ',DllPath,'|conga_wait P <0T I4 >0T[] I4 >0T[] I4 >I4 >U1[] I4 >I4 >U1[] I4 >I4'
-      ⎕NA'I4 ',DllPath,'|conga_send P <0T <U1[] I4 <U1[] I4 I4'
-      ⎕NA'I4 ',DllPath,'|conga_respond P <0T <U1[] I4'
-      ⎕NA'I4 ',DllPath,'|conga_progress P <0T <U1[] I4'
+      ⎕NA'I4 ',DllPath,'|conga_send P <0T <U1[] I4 <U1[] I4 I4 I4 I4'
+      ⎕NA'I4 ',DllPath,'|conga_respond P <0T <U1[] I4 I4 I4'
+      ⎕NA'I4 ',DllPath,'|conga_progress P <0T <U1[] I4 I4 I4'
     ∇
 
     ⍝ ── Error Handling ────────────────────────────────────────
@@ -202,22 +204,32 @@
     ∇ r←Send(h name data);closeFlag;hdrs
     ⍝ Send data on a connection. data must be a byte vector (⎕DR 83).
       closeFlag←0 ⋄ hdrs←⍬
-      r←conga_send h name data(≢data)hdrs(≢hdrs)closeFlag
+      r←conga_send h name data(≢data)hdrs(≢hdrs)closeFlag 0 0
     ∇
 
-    ∇ r←SendEx(h name data hdrs closeFlag)
-    ⍝ Extended send with user headers and close flag.
-      r←conga_send h name data(≢data)hdrs(≢hdrs)closeFlag
+    ∇ r←SendEx(h name data hdrs closeFlag compression compressionLevel)
+    ⍝ Extended send with headers, close flag, and per-message compression settings.
+      r←conga_send h name data(≢data)hdrs(≢hdrs)closeFlag compression compressionLevel
     ∇
 
     ∇ r←Respond(h name data)
     ⍝ Send final response for a command (closes the command).
-      r←conga_respond h name data(≢data)
+      r←conga_respond h name data(≢data)0 0
+    ∇
+
+    ∇ r←RespondEx(h name data compression compressionLevel)
+    ⍝ Extended respond with per-message compression settings.
+      r←conga_respond h name data(≢data)compression compressionLevel
     ∇
 
     ∇ r←Progress(h name data)
     ⍝ Send interim progress message for a command.
-      r←conga_progress h name data(≢data)
+      r←conga_progress h name data(≢data)0 0
+    ∇
+
+    ∇ r←ProgressEx(h name data compression compressionLevel)
+    ⍝ Extended progress with per-message compression settings.
+      r←conga_progress h name data(≢data)compression compressionLevel
     ∇
 
 :EndNamespace
