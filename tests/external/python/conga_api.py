@@ -119,6 +119,9 @@ class CongaApi:
             ctypes.c_int,
             ctypes.c_int,
             ctypes.c_int,
+            ctypes.c_wchar_p,
+            ctypes.c_int,
+            ctypes.POINTER(ctypes.c_int),
         ]
         dll.conga_send.restype = ctypes.c_int
 
@@ -302,9 +305,12 @@ class CongaApi:
         close_flag: int = 0,
         compression: int = 0,
         compression_level: int = 0,
-    ) -> None:
+    ) -> str:
+        """Send data and return the resolved handle name."""
         data_buff, data_len = _build_u8_buffer(data)
         hdr_buff, hdr_len = _build_u8_buffer(headers)
+        out_name = ctypes.create_unicode_buffer(256)
+        out_name_len = ctypes.c_int(0)
         rc = self._dll.conga_send(
             self._require_handle(),
             name,
@@ -315,8 +321,12 @@ class CongaApi:
             close_flag,
             compression,
             compression_level,
+            out_name,
+            256,
+            ctypes.byref(out_name_len),
         )
         self._check("conga_send", rc)
+        return out_name.value
 
     def respond(self, name: str, data: bytes, compression: int = 0, compression_level: int = 0) -> None:
         data_buff, data_len = _build_u8_buffer(data)

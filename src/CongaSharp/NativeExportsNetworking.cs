@@ -214,7 +214,10 @@ public static partial class NativeExports
         int headersLen,
         int closeFlag,
         int compression,
-        int compressionLevel)
+        int compressionLevel,
+        char* outName,
+        int outNameCap,
+        int* outNameLen)
     {
         try
         {
@@ -225,9 +228,83 @@ public static partial class NativeExports
             var nameStr = StringMarshaller.ReadFromPointer(name);
             if (string.IsNullOrEmpty(nameStr)) return ErrorCodes.InvalidName;
 
-            var (pipeline, connName, cmdName, resolveError) = ResolvePipeline(root, nameStr);
-            if (resolveError != ErrorCodes.Success) return resolveError;
+            // Resolve pipeline, connection name, optional command name, and role
+            var obj = root.Registry.Lookup(nameStr);
+            SocketPipeline? pipeline;
+            string connName;
+            string? cmdName;
+            bool isServerSide;
+
+            if (obj is ClientObject client)
+            {
+                pipeline = client.Pipeline;
+                connName = nameStr;
+                cmdName = null;
+                isServerSide = false;
+            }
+            else if (obj is ConnectionObject conn)
+            {
+                pipeline = conn.Pipeline;
+                connName = nameStr;
+                cmdName = null;
+                isServerSide = true;
+            }
+            else
+            {
+                // Dotted name (e.g. "C1.GetInfo") or unknown — split and resolve parent
+                var lastDot = nameStr.LastIndexOf('.');
+                if (lastDot <= 0) return ErrorCodes.InvalidName;
+
+                connName = nameStr[..lastDot];
+                cmdName = nameStr[(lastDot + 1)..];
+
+                var parentObj = root.Registry.Lookup(connName);
+                if (parentObj is ConnectionObject parentConn)
+                {
+                    pipeline = parentConn.Pipeline;
+                    isServerSide = true;
+                }
+                else if (parentObj is ClientObject parentClient)
+                {
+                    pipeline = parentClient.Pipeline;
+                    isServerSide = false;
+                }
+                else
+                {
+                    return ErrorCodes.InvalidName;
+                }
+            }
+
             if (pipeline == null) return ErrorCodes.ObjectNotReady;
+
+            // Command-mode server cannot Send (must use Respond/Progress)
+            bool isCommandMode = pipeline.Mode is CommandMode;
+            if (isCommandMode && isServerSide)
+                return ErrorCodes.InvalidMode;
+
+            // Determine resolved handle name per DRC.Send semantics (A.26):
+            // - base object name → auto-generate suffix
+            // - explicit dotted name → return as-is
+            string resolvedHandle;
+            if (cmdName == null)
+            {
+                resolvedHandle = root.Registry.GenerateAutoName(connName);
+                // For Command mode, extract suffix as the CmdName for the wire frame
+                if (isCommandMode)
+                    cmdName = resolvedHandle[(connName.Length + 1)..];
+            }
+            else
+            {
+                resolvedHandle = nameStr;
+            }
+
+            // Pre-check output buffer capacity before sending (send is not undoable)
+            if (outName != null && outNameCap < resolvedHandle.Length + 1)
+            {
+                if (outNameLen != null)
+                    *outNameLen = resolvedHandle.Length + 1;
+                return ErrorCodes.BufferTooSmall;
+            }
 
             byte[]? rentedPayload = null;
             try
@@ -257,13 +334,20 @@ public static partial class NativeExports
 
                 pipeline.SendAsync(msg).GetAwaiter().GetResult();
 
-                HandlePostAction(root, nameStr, connName, msg.PostAction);
+                HandlePostAction(root, resolvedHandle, connName, msg.PostAction);
             }
             finally
             {
                 if (rentedPayload != null)
                     ArrayPool<byte>.Shared.Return(rentedPayload);
             }
+
+            // Write resolved handle to output buffer after successful send
+            if (outNameLen != null)
+                *outNameLen = resolvedHandle.Length + 1;
+
+            if (outName != null)
+                StringMarshaller.WriteToBuffer(resolvedHandle, outName, outNameCap);
 
             return ErrorCodes.Success;
         }

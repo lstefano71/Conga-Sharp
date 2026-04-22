@@ -242,12 +242,16 @@ Conga-Sharp/
 5. **BlkTextMode** — **framed**: same as BlkRaw but payload treated as text. May apply EOM within framed payload.
 6. **CommandMode**:
    - Track active commands per connection (`ConcurrentDictionary<string, CommandObject>`)
-   - On `conga_send` with a new command name: create `CommandObject`, send Data frame with CmdName
+   - On `conga_send` with a base client name: auto-generate `Auto00000000`-style command handle, create `CommandObject`, send Data frame with CmdName, return full handle via out_name buffer
+   - On `conga_send` with explicit `client.command` name: use as-is, create `CommandObject`, send Data frame
    - On received Data frame with CmdName: create `CommandObject`, enqueue Receive event
    - `conga_respond`: send Respond frame, close `CommandObject`
    - `conga_progress`: send Progress frame, enqueue Progress event on receiver
    - Parallel commands: multiple `CommandObject`s per connection, independent lifecycles
-7. **Native exports** for: `conga_send`, `conga_respond`, `conga_progress`
+   - Server-side `conga_send` in Command mode is rejected with `InvalidMode` (1010) — must use `conga_respond`/`conga_progress`
+   - Wait filtering: `Wait("C1")` receives all command events; `Wait("C1.Auto00000000")` isolates one command
+7. **Native exports** for: `conga_send` (with out_name buffer), `conga_respond`, `conga_progress`
+8. **Auto-name generation**: `ObjectRegistry.GenerateAutoName(parentName)` — per-parent atomic counter, thread-safe, deterministic `<parent>.Auto00000000` format. Used by all modes (Raw, Text, BlkRaw, BlkText, Command) when the caller sends with a base object name.
 
 **Tests:**
 - Raw mode: send and receive bytes

@@ -348,6 +348,211 @@ public class NetworkingExportsTests : IDisposable
     }
 
     // ════════════════════════════════════════════════════════════════════
+    // Send parity tests (DRC.Send A.26 semantics)
+    // ════════════════════════════════════════════════════════════════════
+
+    // ── Command mode: auto-name generation ────────────────────────────
+
+    [Fact]
+    public unsafe void CommandSend_BaseClientName_ReturnsAutoHandle()
+    {
+        SetupCommandConnection(out _);
+
+        var data = "request"u8.ToArray();
+        var (rc, handle) = SendWithHandle("C1", data);
+
+        Assert.Equal(ErrorCodes.Success, rc);
+        Assert.Equal("C1.Auto00000000", handle);
+    }
+
+    [Fact]
+    public unsafe void CommandSend_BaseClientName_IncrementsAutoHandle()
+    {
+        SetupCommandConnection(out var connName);
+
+        var data = "req"u8.ToArray();
+
+        var (rc1, handle1) = SendWithHandle("C1", data);
+        Assert.Equal(ErrorCodes.Success, rc1);
+        Assert.Equal("C1.Auto00000000", handle1);
+
+        // Consume server event and respond so the first command is complete
+        var (srvObj1, _, _, _, _, srvRc1) = WaitForEvent("S1", 5000);
+        Assert.Equal(ErrorCodes.Success, srvRc1);
+
+        var resp = "ok"u8.ToArray();
+        fixed (char* namePtr = srvObj1)
+        fixed (byte* dataPtr = resp)
+        {
+            NativeApi.Respond(_handle, namePtr, dataPtr, resp.Length);
+        }
+
+        // Consume client response
+        WaitForEvent("C1", 5000);
+
+        var (rc2, handle2) = SendWithHandle("C1", data);
+        Assert.Equal(ErrorCodes.Success, rc2);
+        Assert.Equal("C1.Auto00000001", handle2);
+    }
+
+    // ── Command mode: explicit dotted name returned unaltered ─────────
+
+    [Fact]
+    public unsafe void CommandSend_ExplicitName_ReturnedUnaltered()
+    {
+        SetupCommandConnection(out _);
+
+        var data = "request"u8.ToArray();
+        var (rc, handle) = SendWithHandle("C1.MyCmd", data);
+
+        Assert.Equal(ErrorCodes.Success, rc);
+        Assert.Equal("C1.MyCmd", handle);
+    }
+
+    // ── Command mode: wait by handle isolates one command ─────────────
+
+    [Fact]
+    public unsafe void CommandSend_WaitByHandle_IsolatesCommand()
+    {
+        SetupCommandConnection(out var connName);
+
+        var data = "req"u8.ToArray();
+
+        // Send two parallel commands
+        var (rc1, handle1) = SendWithHandle("C1", data);
+        var (rc2, handle2) = SendWithHandle("C1", data);
+        Assert.Equal(ErrorCodes.Success, rc1);
+        Assert.Equal(ErrorCodes.Success, rc2);
+        Assert.NotEqual(handle1, handle2);
+
+        // Server receives both — respond to them
+        var (srvObj1, _, _, _, _, sRc1) = WaitForEvent("S1", 5000);
+        var (srvObj2, _, _, _, _, sRc2) = WaitForEvent("S1", 5000);
+        Assert.Equal(ErrorCodes.Success, sRc1);
+        Assert.Equal(ErrorCodes.Success, sRc2);
+
+        var resp1 = "response-1"u8.ToArray();
+        var resp2 = "response-2"u8.ToArray();
+
+        // Respond to second command first (out of order)
+        fixed (char* n2 = srvObj2)
+        fixed (byte* d2 = resp2)
+        {
+            NativeApi.Respond(_handle, n2, d2, resp2.Length);
+        }
+
+        fixed (char* n1 = srvObj1)
+        fixed (byte* d1 = resp1)
+        {
+            NativeApi.Respond(_handle, n1, d1, resp1.Length);
+        }
+
+        // Wait by specific handle — should get the correct response
+        var (obj2, _, _, payload2, _, wRc2) = WaitForEvent(handle2, 5000);
+        Assert.Equal(ErrorCodes.Success, wRc2);
+        Assert.Equal(handle2, obj2);
+        Assert.Equal("response-2", System.Text.Encoding.UTF8.GetString(payload2));
+
+        var (obj1, _, _, payload1, _, wRc1) = WaitForEvent(handle1, 5000);
+        Assert.Equal(ErrorCodes.Success, wRc1);
+        Assert.Equal(handle1, obj1);
+        Assert.Equal("response-1", System.Text.Encoding.UTF8.GetString(payload1));
+    }
+
+    // ── Command mode: wait by client name gets all command events ──────
+
+    [Fact]
+    public unsafe void CommandSend_WaitByClient_ReceivesAllCommands()
+    {
+        SetupCommandConnection(out var connName);
+
+        var data = "req"u8.ToArray();
+        var (rc1, _) = SendWithHandle("C1", data);
+        Assert.Equal(ErrorCodes.Success, rc1);
+
+        // Server receives and responds
+        var (srvObj, _, _, _, _, sRc) = WaitForEvent("S1", 5000);
+        Assert.Equal(ErrorCodes.Success, sRc);
+        var resp = "done"u8.ToArray();
+        fixed (char* n = srvObj)
+        fixed (byte* d = resp)
+        {
+            NativeApi.Respond(_handle, n, d, resp.Length);
+        }
+
+        // Client waits on "C1" — should receive the Auto command response
+        var (obj, evt, _, payload, _, wRc) = WaitForEvent("C1", 5000);
+        Assert.Equal(ErrorCodes.Success, wRc);
+        Assert.StartsWith("C1.Auto", obj);
+        Assert.Equal("Receive", evt);
+        Assert.Equal("done", System.Text.Encoding.UTF8.GetString(payload));
+    }
+
+    // ── Command mode: server-side Send rejected ───────────────────────
+
+    [Fact]
+    public unsafe void CommandSend_ServerSide_ReturnsInvalidMode()
+    {
+        SetupCommandConnection(out var connName);
+
+        // Server-side connection trying to Send in Command mode
+        var data = "illegal"u8.ToArray();
+        var (rc, _) = SendWithHandle(connName, data);
+
+        Assert.Equal(ErrorCodes.InvalidMode, rc);
+    }
+
+    // ── Raw mode: auto-name generation ────────────────────────────────
+
+    [Fact]
+    public unsafe void RawSend_BaseClientName_ReturnsAutoHandle()
+    {
+        SetupRawConnection(out _);
+
+        var data = "hello"u8.ToArray();
+        var (rc, handle) = SendWithHandle("C1", data);
+
+        Assert.Equal(ErrorCodes.Success, rc);
+        Assert.Equal("C1.Auto00000000", handle);
+    }
+
+    [Fact]
+    public unsafe void RawSend_ExplicitName_ReturnedUnaltered()
+    {
+        SetupRawConnection(out _);
+
+        var data = "hello"u8.ToArray();
+        var (rc, handle) = SendWithHandle("C1.MyMsg", data);
+
+        Assert.Equal(ErrorCodes.Success, rc);
+        Assert.Equal("C1.MyMsg", handle);
+    }
+
+    // ── Send outName buffer too small ─────────────────────────────────
+
+    [Fact]
+    public unsafe void Send_OutNameBufferTooSmall_ReturnsError()
+    {
+        SetupRawConnection(out _);
+
+        var data = "hello"u8.ToArray();
+        var outName = new char[3]; // too small for "C1.Auto00000000"
+        int outNameLen;
+
+        fixed (char* namePtr = "C1")
+        fixed (byte* dataPtr = data)
+        fixed (char* outNamePtr = outName)
+        {
+            int rc = NativeApi.Send(
+                _handle, namePtr, dataPtr, data.Length,
+                null, 0, 0, 0, 0, outNamePtr, 3, &outNameLen);
+
+            Assert.Equal(ErrorCodes.BufferTooSmall, rc);
+            Assert.Equal("C1.Auto00000000".Length + 1, outNameLen);
+        }
+    }
+
+    // ════════════════════════════════════════════════════════════════════
     // Helpers
     // ════════════════════════════════════════════════════════════════════
 
@@ -475,5 +680,50 @@ public class NetworkingExportsTests : IDisposable
         var (obj, _, _, _, _, rc) = WaitForEvent("S1", 5000);
         Assert.Equal(ErrorCodes.Success, rc);
         connName = obj;
+    }
+
+    /// <summary>
+    /// Creates a Command server on an ephemeral port, connects a client,
+    /// and consumes the Connect event. Returns the server-side connection name.
+    /// </summary>
+    private unsafe void SetupCommandConnection(out string connName)
+    {
+        CreateServer("Command");
+        StartServer("S1");
+        int port = GetLocalPort("S1");
+
+        CreateClient("127.0.0.1", port, "Command");
+        ConnectClient("C1", 5000);
+
+        var (obj, _, _, _, _, rc) = WaitForEvent("S1", 5000);
+        Assert.Equal(ErrorCodes.Success, rc);
+        connName = obj;
+    }
+
+    /// <summary>
+    /// Sends data and returns the resolved handle name written to outName buffer.
+    /// </summary>
+    private unsafe (int rc, string resolvedHandle) SendWithHandle(
+        string objectName, byte[] data,
+        byte[]? headers = null, int closeFlag = 0)
+    {
+        var outName = new char[256];
+        int outNameLen;
+
+        fixed (char* namePtr = objectName)
+        fixed (byte* dataPtr = data)
+        fixed (byte* hdrPtr = headers)
+        fixed (char* outNamePtr = outName)
+        {
+            int rc = NativeApi.Send(
+                _handle, namePtr, dataPtr, data.Length,
+                hdrPtr, headers?.Length ?? 0, closeFlag,
+                0, 0, outNamePtr, 256, &outNameLen);
+
+            string handle = rc == ErrorCodes.Success
+                ? new string(outNamePtr)
+                : "";
+            return (rc, handle);
+        }
     }
 }

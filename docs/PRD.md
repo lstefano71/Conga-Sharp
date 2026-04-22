@@ -239,7 +239,12 @@ int32_t conga_wait(
 ```
 
 #### `conga_send`
-Sends data on a connection or creates/sends a command.
+Sends data on a connection or creates/sends a command. Returns the resolved/generated handle name in `out_name`.
+
+When `name` is a base object (e.g. `"C1"`), an auto-generated suffix is appended (e.g. `"C1.Auto00000000"`). When `name` is an explicit dotted name (e.g. `"C1.MyCmd"`), it is used as-is. The full resolved handle is written to `out_name` and its byte length (excluding null terminator) to `*out_name_len`.
+
+In Command mode, server-side connections must use `conga_respond`/`conga_progress` instead — calling `conga_send` from a server connection returns `InvalidMode` (1010).
+
 ```c
 int32_t conga_send(
     uintptr_t  handle,
@@ -250,11 +255,14 @@ int32_t conga_send(
     int32_t    headers_len,
     int32_t    close_flag,     // 0=noop, 1=close conn, 2=close cmd, 3=Sent event
     int32_t    compression,    // 0=None, 1=Deflate, 2=LZ4, 3=Zstd
-    int32_t    compression_level
+    int32_t    compression_level,
+    wchar_t*   out_name,       // output: resolved handle name (caller-allocated)
+    int32_t    out_name_cap,   // capacity of out_name in wchar_t units
+    int32_t*   out_name_len    // output: actual length in wchar_t units (excl. null)
 );
 ```
 ```apl
-'I4 congasharp|conga_send P <0T <U1[] I4 <U1[] I4 I4 I4 I4'
+'I4 congasharp|conga_send P <0T <U1[] I4 <U1[] I4 I4 I4 I4 >0T[] I4 >I4'
 ```
 
 #### `conga_respond`

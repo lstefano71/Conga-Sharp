@@ -12,6 +12,7 @@ public sealed class ObjectRegistry
     private int _nextServer;
     private int _nextClient;
     private readonly ConcurrentDictionary<string, int> _nextConnection = new(StringComparer.OrdinalIgnoreCase);
+    private readonly ConcurrentDictionary<string, int> _nextAuto = new(StringComparer.OrdinalIgnoreCase);
 
     public string GenerateServerName()
     {
@@ -29,6 +30,17 @@ public sealed class ObjectRegistry
     {
         var n = _nextConnection.AddOrUpdate(parentName, 1, (_, old) => old + 1);
         return $"{parentName}.CON{n:D4}";
+    }
+
+    /// <summary>
+    /// Generates a unique auto name for Send operations.
+    /// Format: parentName.Auto00000000, parentName.Auto00000001, etc.
+    /// Counter is per-parent and thread-safe.
+    /// </summary>
+    public string GenerateAutoName(string parentName)
+    {
+        var n = _nextAuto.AddOrUpdate(parentName, 0, (_, old) => old + 1);
+        return $"{parentName}.Auto{n:D8}";
     }
 
     public bool TryAdd(CongaObject obj)

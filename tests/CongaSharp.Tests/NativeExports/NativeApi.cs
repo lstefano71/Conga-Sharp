@@ -83,9 +83,22 @@ internal static unsafe class NativeApi
         int compression = 0,
         int compressionLevel = 0)
     {
-        delegate* unmanaged<nint, char*, byte*, int, byte*, int, int, int, int, int> fn =
+        return Send(handle, name, data, dataLen, headers, headersLen, closeFlag,
+            compression, compressionLevel, null, 0, null);
+    }
+
+    public static int Send(nint handle, char* name,
+        byte* data, int dataLen,
+        byte* headers, int headersLen,
+        int closeFlag,
+        int compression,
+        int compressionLevel,
+        char* outName, int outNameCap, int* outNameLen)
+    {
+        delegate* unmanaged<nint, char*, byte*, int, byte*, int, int, int, int, char*, int, int*, int> fn =
             &CongaSharp.NativeExports.CongaSend;
-        return fn(handle, name, data, dataLen, headers, headersLen, closeFlag, compression, compressionLevel);
+        return fn(handle, name, data, dataLen, headers, headersLen, closeFlag,
+            compression, compressionLevel, outName, outNameCap, outNameLen);
     }
 
     public static int Respond(nint handle, char* name, byte* data, int dataLen,
