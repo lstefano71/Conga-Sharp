@@ -3,6 +3,7 @@ namespace CongaSharp.Tests.Core;
 using CongaSharp.Core;
 using Xunit;
 
+[Collection("HandleTable")]
 public class HandleTableTests : IDisposable
 {
     public HandleTableTests() => HandleTable.Reset();

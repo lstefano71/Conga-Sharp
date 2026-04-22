@@ -5,6 +5,7 @@ using CongaSharp.Errors;
 using CongaSharp.Events;
 using Xunit;
 
+[Collection("HandleTable")]
 public class NetworkingExportsTests : IDisposable
 {
     private readonly nint _handle;
