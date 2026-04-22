@@ -124,6 +124,73 @@ See [docs/PRD.md](docs/PRD.md) for full API specification and [docs/implementati
 
 Current benchmark snapshot and reproduction command: [docs/benchmarks.md](docs/benchmarks.md).
 
+External C-API benchmark artifacts (Python consumer + published DLL):
+- Markdown summary: [docs/benchmarks-external.md](docs/benchmarks-external.md)
+- Machine-readable JSON: [docs/external-api-benchmarks.json](docs/external-api-benchmarks.json)
+- Functional scenario results: [docs/external-api-functional.json](docs/external-api-functional.json)
+
+Native Python socket baseline artifacts (no framing, no compression):
+- Markdown summary: `docs/benchmarks-native-socket-baseline.md`
+- Machine-readable JSON: `docs/native-socket-baseline.json`
+
+## External C-API Harness (Python)
+
+The repository includes an external consumer harness that calls the published NativeAOT DLL via `ctypes`, using an orchestrator plus autonomous server/client worker processes:
+
+- `tests/external/python/orchestrator.py`
+- `tests/external/python/worker_server.py`
+- `tests/external/python/worker_client.py`
+- `tests/external/python/conga_api.py`
+
+### Publish the DLL first (required)
+
+```powershell
+dotnet publish src\CongaSharp\CongaSharp.csproj -c Release -r win-x64
+```
+
+### Run functional all-mode coverage
+
+```powershell
+python tests\external\python\orchestrator.py `
+  --dll src\CongaSharp\bin\Release\net10.0\win-x64\publish\congasharp.dll `
+  functional `
+  --functional-out docs\external-api-functional.json
+```
+
+### Run deep benchmark matrix (all modes, framed compression algorithms + levels)
+
+```powershell
+python tests\external\python\orchestrator.py `
+  --dll src\CongaSharp\bin\Release\net10.0\win-x64\publish\congasharp.dll `
+  benchmark `
+  --depth deep `
+  --full-compression `
+  --benchmark-out docs\external-api-benchmarks.json `
+  --benchmark-md docs\benchmarks-external.md
+```
+
+### Run both functional + benchmark
+
+```powershell
+python tests\external\python\orchestrator.py `
+  --dll src\CongaSharp\bin\Release\net10.0\win-x64\publish\congasharp.dll `
+  run-all `
+  --depth deep `
+  --full-compression `
+  --functional-out docs\external-api-functional.json `
+  --benchmark-out docs\external-api-benchmarks.json `
+  --benchmark-md docs\benchmarks-external.md
+```
+
+### Run native Python socket baseline benchmark (no framing/compression)
+
+```powershell
+python tests\external\python\native_socket_baseline.py `
+  --depth deep `
+  --json-out docs\native-socket-baseline.json `
+  --md-out docs\benchmarks-native-socket-baseline.md
+```
+
 ## Events
 
 | Code | Name | Description |

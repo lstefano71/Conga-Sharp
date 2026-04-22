@@ -31,3 +31,5 @@ x86/
 # OS files
 Thumbs.db
 .DS_Store
+
+**/*.pyc

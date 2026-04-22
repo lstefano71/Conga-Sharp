@@ -54,3 +54,10 @@ Zstd         |    10 MB | Compressible  |   1074,7 |    615,4 |    107,5 |      
 
 - Numbers are environment-dependent and should be compared only against runs captured with the same machine, runtime, and load conditions.
 - Decimal values use the current locale formatting from test output.
+- External consumer benchmark artifacts (Python + published NativeAOT DLL) are tracked separately in:
+  - `docs/benchmarks-external.md`
+  - `docs/external-api-benchmarks.json`
+  - `docs/external-api-functional.json`
+- Native Python socket baseline (no framing/compression) is tracked separately in:
+  - `docs/benchmarks-native-socket-baseline.md`
+  - `docs/native-socket-baseline.json`
