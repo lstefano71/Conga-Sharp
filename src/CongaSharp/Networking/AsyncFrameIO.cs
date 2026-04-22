@@ -35,8 +35,8 @@ public static class AsyncFrameIO
 
             var header = FrameHeader.ReadFrom(headerBuf);
 
-            // Stage 3: Validate payload size
-            if (header.PayloadLen > maxPayloadSize)
+            // Stage 3: Validate payload size (both wire and decompressed)
+            if (header.PayloadLen > maxPayloadSize || header.UncompressedLen > maxPayloadSize)
                 return new FrameReadResult { ErrorCode = ErrorCodes.BufferExceeded, Header = header };
 
             // Stage 4: Read user headers (keep as new byte[] — owned by FrameReadResult)
@@ -77,7 +77,7 @@ public static class AsyncFrameIO
                 }
             }
 
-            // Stage 7: Decompress payload
+            // Stage 7: Decompress payload and verify uncompressed size
             byte[] payload;
             try
             {
@@ -88,6 +88,9 @@ public static class AsyncFrameIO
             {
                 return new FrameReadResult { ErrorCode = ErrorCodes.CompressionError, Header = header };
             }
+
+            if (payload.Length != (int)header.UncompressedLen)
+                return new FrameReadResult { ErrorCode = ErrorCodes.CompressionError, Header = header };
 
             // Stage 8: Decode user headers
             var userHeaders = FrameFlags.GetHasUserHeaders(header.Flags) && headersBytes.Length > 0
@@ -118,10 +121,12 @@ public static class AsyncFrameIO
         ReadOnlyMemory<byte> payload,
         Dictionary<string, byte[]>? userHeaders,
         CompressionAlgorithm compression,
+        int compressionLevel,
         uint magic,
         CancellationToken ct)
     {
-        var compressedPayload = Compression.Compress(compression, payload);
+        var uncompressedLen = (uint)payload.Length;
+        var compressedPayload = Compression.Compress(compression, payload, compressionLevel);
 
         var headersBytes = (userHeaders != null && userHeaders.Count > 0)
             ? UserHeaders.Encode(userHeaders)
@@ -140,6 +145,7 @@ public static class AsyncFrameIO
             CmdName = cmdName ?? "",
             HeadersLen = (uint)headersBytes.Length,
             PayloadLen = (uint)compressedPayload.Length,
+            UncompressedLen = uncompressedLen,
             HeaderCrc = 0
         };
 

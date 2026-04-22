@@ -95,4 +95,16 @@ public sealed class OutboundMessage
     /// 0 = success.
     /// </summary>
     public int ErrorCode { get; init; }
+
+    /// <summary>
+    /// For framed modes: the compression algorithm to use for this message.
+    /// Mutable so callers can set per-message after PrepareOutbound creates the message.
+    /// </summary>
+    public Protocol.CompressionAlgorithm Compression { get; set; } = Protocol.CompressionAlgorithm.None;
+
+    /// <summary>
+    /// For framed modes: the compression level (0 = algorithm's default).
+    /// Deflate: 1-3; LZ4: 0-12; Zstd: 1-22. Mutable per-message.
+    /// </summary>
+    public int CompressionLevel { get; set; }
 }

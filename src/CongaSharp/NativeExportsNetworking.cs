@@ -212,7 +212,9 @@ public static partial class NativeExports
         int dataLen,
         byte* headers,
         int headersLen,
-        int closeFlag)
+        int closeFlag,
+        int compression,
+        int compressionLevel)
     {
         try
         {
@@ -250,6 +252,9 @@ public static partial class NativeExports
                 var msg = pipeline.Mode.PrepareOutbound(connName, payload, userHeaders, postAction, cmdName);
                 if (msg.ErrorCode != 0) return msg.ErrorCode;
 
+                msg.Compression = (Protocol.CompressionAlgorithm)compression;
+                msg.CompressionLevel = compressionLevel;
+
                 pipeline.SendAsync(msg).GetAwaiter().GetResult();
 
                 HandlePostAction(root, nameStr, connName, msg.PostAction);
@@ -270,7 +275,9 @@ public static partial class NativeExports
         nint handle,
         char* name,
         byte* data,
-        int dataLen)
+        int dataLen,
+        int compression,
+        int compressionLevel)
     {
         try
         {
@@ -305,6 +312,8 @@ public static partial class NativeExports
                 }
 
                 var msg = commandMode.PrepareRespond(connName, payload, cmdName);
+                msg.Compression = (Protocol.CompressionAlgorithm)compression;
+                msg.CompressionLevel = compressionLevel;
                 pipeline.SendAsync(msg).GetAwaiter().GetResult();
             }
             finally
@@ -326,7 +335,9 @@ public static partial class NativeExports
         nint handle,
         char* name,
         byte* data,
-        int dataLen)
+        int dataLen,
+        int compression,
+        int compressionLevel)
     {
         try
         {
@@ -361,6 +372,8 @@ public static partial class NativeExports
                 }
 
                 var msg = commandMode.PrepareProgress(connName, payload, cmdName);
+                msg.Compression = (Protocol.CompressionAlgorithm)compression;
+                msg.CompressionLevel = compressionLevel;
                 pipeline.SendAsync(msg).GetAwaiter().GetResult();
             }
             finally

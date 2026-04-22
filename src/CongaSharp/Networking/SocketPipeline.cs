@@ -76,7 +76,8 @@ public sealed class SocketPipeline : IAsyncDisposable
                     msg.CmdName ?? "",
                     msg.Payload,
                     userHeaders,
-                    CompressionAlgorithm.None,
+                    msg.Compression,
+                    msg.CompressionLevel,
                     0,
                     _cts.Token).ConfigureAwait(false);
             }

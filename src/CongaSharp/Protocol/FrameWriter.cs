@@ -17,10 +17,11 @@ public static class FrameWriter
         ReadOnlySpan<byte> payload,
         IReadOnlyDictionary<string, byte[]>? userHeaders = null,
         CompressionAlgorithm compression = CompressionAlgorithm.None,
+        int compressionLevel = 0,
         uint magic = 0,
         bool includePayloadCrc = true)
     {
-        var compressedPayload = Compression.Compress(compression, payload);
+        var compressedPayload = Compression.Compress(compression, payload, compressionLevel);
         var uncompressedLen = (uint)payload.Length;
 
         var headersBytes = (userHeaders != null && userHeaders.Count > 0)

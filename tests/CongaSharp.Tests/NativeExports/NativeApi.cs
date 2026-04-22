@@ -79,24 +79,28 @@ internal static unsafe class NativeApi
     public static int Send(nint handle, char* name,
         byte* data, int dataLen,
         byte* headers, int headersLen,
-        int closeFlag)
+        int closeFlag,
+        int compression = 0,
+        int compressionLevel = 0)
     {
-        delegate* unmanaged<nint, char*, byte*, int, byte*, int, int, int> fn =
+        delegate* unmanaged<nint, char*, byte*, int, byte*, int, int, int, int, int> fn =
             &CongaSharp.NativeExports.CongaSend;
-        return fn(handle, name, data, dataLen, headers, headersLen, closeFlag);
+        return fn(handle, name, data, dataLen, headers, headersLen, closeFlag, compression, compressionLevel);
     }
 
-    public static int Respond(nint handle, char* name, byte* data, int dataLen)
+    public static int Respond(nint handle, char* name, byte* data, int dataLen,
+        int compression = 0, int compressionLevel = 0)
     {
-        delegate* unmanaged<nint, char*, byte*, int, int> fn =
+        delegate* unmanaged<nint, char*, byte*, int, int, int, int> fn =
             &CongaSharp.NativeExports.CongaRespond;
-        return fn(handle, name, data, dataLen);
+        return fn(handle, name, data, dataLen, compression, compressionLevel);
     }
 
-    public static int Progress(nint handle, char* name, byte* data, int dataLen)
+    public static int Progress(nint handle, char* name, byte* data, int dataLen,
+        int compression = 0, int compressionLevel = 0)
     {
-        delegate* unmanaged<nint, char*, byte*, int, int> fn =
+        delegate* unmanaged<nint, char*, byte*, int, int, int, int> fn =
             &CongaSharp.NativeExports.CongaProgress;
-        return fn(handle, name, data, dataLen);
+        return fn(handle, name, data, dataLen, compression, compressionLevel);
     }
 }

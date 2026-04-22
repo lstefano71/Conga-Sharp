@@ -23,9 +23,18 @@ public static class Compression
     /// </summary>
     public static ReadOnlyMemory<byte> Compress(CompressionAlgorithm algo, ReadOnlyMemory<byte> data)
     {
+        return Compress(algo, data, 0);
+    }
+
+    /// <summary>
+    /// Overload accepting <c>ReadOnlyMemory&lt;byte&gt;</c> with compression level.
+    /// Returns the same memory slice (zero copy) for None; otherwise compresses via Span.
+    /// </summary>
+    public static ReadOnlyMemory<byte> Compress(CompressionAlgorithm algo, ReadOnlyMemory<byte> data, int level)
+    {
         if (data.Length == 0 || algo == CompressionAlgorithm.None)
-            return data; // Return same memory slice, zero copy
-        return Compress(algo, data.Span);
+            return data;
+        return Compress(algo, data.Span, level);
     }
 
     /// <summary>
@@ -33,21 +42,34 @@ public static class Compression
     /// </summary>
     public static byte[] Compress(CompressionAlgorithm algo, byte[] data)
     {
+        return Compress(algo, data, 0);
+    }
+
+    /// <summary>
+    /// Overload accepting <c>byte[]</c> with compression level.
+    /// </summary>
+    public static byte[] Compress(CompressionAlgorithm algo, byte[] data, int level)
+    {
         if (data.Length == 0 || algo == CompressionAlgorithm.None)
-            return data; // Return same reference, zero copy
-        return Compress(algo, data.AsSpan());
+            return data;
+        return Compress(algo, data.AsSpan(), level);
     }
 
     public static byte[] Compress(CompressionAlgorithm algo, ReadOnlySpan<byte> data)
+    {
+        return Compress(algo, data, 0);
+    }
+
+    public static byte[] Compress(CompressionAlgorithm algo, ReadOnlySpan<byte> data, int level)
     {
         if (data.IsEmpty || algo == CompressionAlgorithm.None)
             return data.ToArray();
 
         return algo switch
         {
-            CompressionAlgorithm.Deflate => CompressDeflate(data),
-            CompressionAlgorithm.LZ4 => CompressLZ4(data),
-            CompressionAlgorithm.Zstd => CompressZstd(data),
+            CompressionAlgorithm.Deflate => CompressDeflate(data, level),
+            CompressionAlgorithm.LZ4 => CompressLZ4(data, level),
+            CompressionAlgorithm.Zstd => CompressZstd(data, level),
             _ => throw new ArgumentOutOfRangeException(nameof(algo))
         };
     }
@@ -76,10 +98,18 @@ public static class Compression
         };
     }
 
-    private static byte[] CompressDeflate(ReadOnlySpan<byte> data)
+    private static byte[] CompressDeflate(ReadOnlySpan<byte> data, int level)
     {
-        using var output = new MemoryStream(data.Length); // Pre-size to avoid growth reallocations
-        using (var deflate = new DeflateStream(output, CompressionLevel.Fastest, leaveOpen: true))
+        var clevel = level switch
+        {
+            0 => System.IO.Compression.CompressionLevel.Fastest,
+            1 => System.IO.Compression.CompressionLevel.Fastest,
+            2 => System.IO.Compression.CompressionLevel.Optimal,
+            3 => System.IO.Compression.CompressionLevel.SmallestSize,
+            _ => System.IO.Compression.CompressionLevel.Optimal
+        };
+        using var output = new MemoryStream(data.Length);
+        using (var deflate = new DeflateStream(output, clevel, leaveOpen: true))
         {
             deflate.Write(data);
         }
@@ -105,9 +135,19 @@ public static class Compression
         }
     }
 
-    private static byte[] CompressLZ4(ReadOnlySpan<byte> data)
+    private static byte[] CompressLZ4(ReadOnlySpan<byte> data, int level)
     {
-        return LZ4Pickler.Pickle(data);
+        var lz4Level = level switch
+        {
+            0 => LZ4Level.L00_FAST,
+            >= 1 and <= 2 => LZ4Level.L00_FAST,
+            >= 3 and <= 5 => LZ4Level.L03_HC,
+            >= 6 and <= 8 => LZ4Level.L06_HC,
+            >= 9 and <= 11 => LZ4Level.L09_HC,
+            >= 12 => LZ4Level.L12_MAX,
+            _ => LZ4Level.L00_FAST
+        };
+        return LZ4Pickler.Pickle(data, lz4Level);
     }
 
     private static byte[] DecompressLZ4(ReadOnlySpan<byte> data)
@@ -115,9 +155,16 @@ public static class Compression
         return LZ4Pickler.Unpickle(data);
     }
 
-    private static byte[] CompressZstd(ReadOnlySpan<byte> data)
+    private static byte[] CompressZstd(ReadOnlySpan<byte> data, int level)
     {
-        var compressor = t_compressor ??= new Compressor();
+        var zstdLevel = level > 0 ? level : Compressor.DefaultCompressionLevel;
+        var compressor = t_compressor;
+        if (compressor == null || compressor.Level != zstdLevel)
+        {
+            compressor?.Dispose();
+            compressor = new Compressor(zstdLevel);
+            t_compressor = compressor;
+        }
         return compressor.Wrap(data).ToArray();
     }
 

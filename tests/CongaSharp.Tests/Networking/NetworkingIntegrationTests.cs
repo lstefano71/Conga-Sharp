@@ -479,7 +479,7 @@ public class NetworkingIntegrationTests : IAsyncLifetime
 
         await AsyncFrameIO.WriteFrameAsync(
             stream, MsgType.Data, "TestCmd", payload, userHeaders,
-            CompressionAlgorithm.None, 0, CancellationToken.None);
+            CompressionAlgorithm.None, 0, 0, CancellationToken.None);
 
         stream.Position = 0;
 
