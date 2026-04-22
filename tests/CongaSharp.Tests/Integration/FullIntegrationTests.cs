@@ -276,12 +276,15 @@ public class FullIntegrationTests : IAsyncLifetime
     [Trait("Category", "PerfSmoke")]
     public async Task CompressionBenchmarkSummary()
     {
+        const int warmupIterations = 3;
+        const int measuredIterations = 12;
         var algos = new[] { CompressionAlgorithm.None, CompressionAlgorithm.Deflate, CompressionAlgorithm.LZ4, CompressionAlgorithm.Zstd };
         var sizes = new[] { 1_024, 102_400, 1_048_576, 10_485_760 };
         var patterns = new[] { "Random", "Compressible" };
 
-        _output.WriteLine($"{"Compression",-12} | {"Size",8} | {"Pattern",-13} | {"Throughput",14} | {"Messages/s",12} | {"Ratio",6} | {"Time",10}");
-        _output.WriteLine(new string('-', 98));
+        _output.WriteLine($"Warmup iterations: {warmupIterations}, measured iterations: {measuredIterations} (reported as p50/p95)");
+        _output.WriteLine($"{"Compression",-12} | {"Size",8} | {"Pattern",-13} | {"Thrpt p50",9} | {"Thrpt p95",9} | {"Msg/s p50",9} | {"Time p50",9} | {"Time p95",9} | {"Ratio",6}");
+        _output.WriteLine(new string('-', 124));
 
         foreach (var algo in algos)
         {
@@ -301,23 +304,33 @@ public class FullIntegrationTests : IAsyncLifetime
                         var modeObj = new BlkRawMode();
                         var outMsg = modeObj.PrepareOutbound("C1", payload, null, PostSendAction.None, null);
                         outMsg.Compression = algo;
+                        var elapsedMs = new List<double>(measuredIterations);
 
-                        var sw = Stopwatch.StartNew();
-                        await tc.Client.Pipeline!.SendAsync(outMsg);
-                        var recvEvt = root.Events.Wait(tc.ConnName, 60_000, root.ShutdownToken);
-                        sw.Stop();
+                        for (int i = 0; i < warmupIterations + measuredIterations; i++)
+                        {
+                            var sw = Stopwatch.StartNew();
+                            await tc.Client.Pipeline!.SendAsync(outMsg);
+                            var recvEvt = root.Events.Wait(tc.ConnName, 60_000, root.ShutdownToken);
+                            sw.Stop();
 
-                        Assert.Equal(EventType.Block, recvEvt.Type);
-                        Assert.Equal(payload.Length, recvEvt.Payload.Length);
+                            Assert.Equal(EventType.Block, recvEvt.Type);
+                            Assert.Equal(payload.Length, recvEvt.Payload.Length);
 
-                        var mbPerSec = size / 1_048_576.0 / sw.Elapsed.TotalSeconds;
-                        var messagesPerSec = 1.0 / sw.Elapsed.TotalSeconds;
+                            if (i >= warmupIterations)
+                                elapsedMs.Add(sw.Elapsed.TotalMilliseconds);
+                        }
+
+                        var p50Ms = Percentile(elapsedMs, 0.50);
+                        var p95Ms = Percentile(elapsedMs, 0.95);
+                        var p50Throughput = ThroughputMbPerSec(size, p50Ms);
+                        var p95Throughput = ThroughputMbPerSec(size, p95Ms);
+                        var p50MessagesPerSec = 1000.0 / p50Ms;
                         var ratio = algo != CompressionAlgorithm.None
                             ? (double)Compression.Compress(algo, payload).Length / size
                             : 1.0;
 
                         _output.WriteLine(
-                            $"{algo,-12} | {IntegrationTestHelper.FormatSize(size),8} | {pattern,-13} | {mbPerSec,10:F1} MB/s | {messagesPerSec,10:F1} | {ratio,5:F3} | {sw.Elapsed.TotalMilliseconds,7:F1} ms");
+                            $"{algo,-12} | {IntegrationTestHelper.FormatSize(size),8} | {pattern,-13} | {p50Throughput,8:F1} | {p95Throughput,8:F1} | {p50MessagesPerSec,8:F1} | {p50Ms,8:F1} ms | {p95Ms,8:F1} ms | {ratio,5:F3}");
                     }
                     finally
                     {
@@ -439,6 +452,23 @@ public class FullIntegrationTests : IAsyncLifetime
             var msg = modeObj.PrepareOutbound(connName, sendData, null, PostSendAction.None, null);
             await pipeline.SendAsync(msg);
         }
+    }
+
+    private static double ThroughputMbPerSec(int bytes, double elapsedMs)
+    {
+        var elapsedSeconds = elapsedMs / 1000.0;
+        return bytes / 1_048_576.0 / elapsedSeconds;
+    }
+
+    private static double Percentile(List<double> samples, double percentile)
+    {
+        if (samples.Count == 0)
+            throw new ArgumentException("No samples to calculate percentile.", nameof(samples));
+
+        var ordered = samples.OrderBy(x => x).ToArray();
+        var index = (int)Math.Ceiling(percentile * ordered.Length) - 1;
+        index = Math.Clamp(index, 0, ordered.Length - 1);
+        return ordered[index];
     }
 
     #endregion
