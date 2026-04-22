@@ -276,14 +276,14 @@ public class FullIntegrationTests : IAsyncLifetime
     [Trait("Category", "PerfSmoke")]
     public async Task CompressionBenchmarkSummary()
     {
-        const int warmupIterations = 3;
-        const int measuredIterations = 12;
+        const int warmupIterations = 5;
+        const int measuredIterations = 50;
         var algos = new[] { CompressionAlgorithm.None, CompressionAlgorithm.Deflate, CompressionAlgorithm.LZ4, CompressionAlgorithm.Zstd };
         var sizes = new[] { 1_024, 102_400, 1_048_576, 10_485_760 };
         var patterns = new[] { "Random", "Compressible" };
 
         _output.WriteLine($"Warmup iterations: {warmupIterations}, measured iterations: {measuredIterations} (reported as p50/p95)");
-        _output.WriteLine($"{"Compression",-12} | {"Size",8} | {"Pattern",-13} | {"Thrpt p50",9} | {"Thrpt p95",9} | {"Msg/s p50",9} | {"Time p50",9} | {"Time p95",9} | {"Ratio",6}");
+        _output.WriteLine($"{"Compression",-10} | {"Size",8} | {"Pattern",-13} | {"Thrpt p50",9} | {"Thrpt p95",9} | {"Msg/s p50",9} | {"Time p50",9} | {"Time p95",9} | {"Ratio",6}");
         _output.WriteLine(new string('-', 124));
 
         foreach (var algo in algos)
@@ -330,7 +330,7 @@ public class FullIntegrationTests : IAsyncLifetime
                             : 1.0;
 
                         _output.WriteLine(
-                            $"{algo,-12} | {IntegrationTestHelper.FormatSize(size),8} | {pattern,-13} | {p50Throughput,8:F1} | {p95Throughput,8:F1} | {p50MessagesPerSec,8:F1} | {p50Ms,8:F1} ms | {p95Ms,8:F1} ms | {ratio,5:F3}");
+                            $"{algo,-10} | {IntegrationTestHelper.FormatSize(size),8} | {pattern,-13} | {p50Throughput,8:F1} | {p95Throughput,8:F1} | {p50MessagesPerSec,8:F1} | {p50Ms,8:F1} ms | {p95Ms,8:F1} ms | {ratio,5:F3}");
                     }
                     finally
                     {
