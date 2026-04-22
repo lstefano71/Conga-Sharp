@@ -105,3 +105,4 @@ dumpbin /exports src\CongaSharp\bin\Release\net10.0\win-x64\publish\congasharp.d
 - New features need a test
 - Bugs fixed need a non-regression test
 - you can run Dyalog APL scripts with the skill dyalog-apl-runner
+- the code is not in production yet: there is no need to provide for backward compatibility, and breaking changes are acceptable if they are well justified and documented in the PR description. This includes changes to the protocol, the C API, and the error codes.

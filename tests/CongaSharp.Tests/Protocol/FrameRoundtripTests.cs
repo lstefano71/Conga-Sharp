@@ -143,9 +143,9 @@ public class FrameRoundtripTests
         FrameWriter.WriteFrame(ms, MsgType.Data, "", new byte[] { 1, 2, 3 }, includePayloadCrc: true);
 
         var data = ms.ToArray();
-        // Corrupt a payload byte (after the 52-byte header)
-        if (data.Length > 53)
-            data[53] ^= 0xFF;
+        // Corrupt a payload byte (after the 56-byte header)
+        if (data.Length > 57)
+            data[57] ^= 0xFF;
 
         using var ms2 = new MemoryStream(data);
         var result = FrameReader.ReadFrame(ms2);
@@ -247,5 +247,58 @@ public class FrameRoundtripTests
         var result = FrameReader.ReadFrame(ms);
         Assert.True(result.Success);
         Assert.Equal(payload, result.Payload);
+    }
+
+    [Theory]
+    [InlineData(CompressionAlgorithm.None)]
+    [InlineData(CompressionAlgorithm.Deflate)]
+    [InlineData(CompressionAlgorithm.LZ4)]
+    [InlineData(CompressionAlgorithm.Zstd)]
+    public void UncompressedLen_MatchesOriginalPayloadSize(CompressionAlgorithm algo)
+    {
+        using var ms = new MemoryStream();
+        var payload = System.Text.Encoding.UTF8.GetBytes("Test data " + new string('Z', 200));
+
+        FrameWriter.WriteFrame(ms, MsgType.Data, "", payload, compression: algo);
+        ms.Position = 0;
+
+        var result = FrameReader.ReadFrame(ms);
+        Assert.True(result.Success, $"Failed for {algo}: {result.ErrorCode}");
+        Assert.Equal((uint)payload.Length, result.Header.UncompressedLen);
+        Assert.Equal(payload, result.Payload);
+    }
+
+    [Fact]
+    public void TamperedUncompressedLen_DetectedAsCompressionError()
+    {
+        using var ms = new MemoryStream();
+        var payload = System.Text.Encoding.UTF8.GetBytes("Hello " + new string('X', 300));
+
+        FrameWriter.WriteFrame(ms, MsgType.Data, "", payload, compression: CompressionAlgorithm.LZ4, includePayloadCrc: false);
+
+        var data = ms.ToArray();
+        // Tamper UncompressedLen at offset 48 (little-endian) — set it to wrong value
+        System.Buffers.Binary.BinaryPrimitives.WriteUInt32LittleEndian(data.AsSpan(48), 9999);
+        // Recompute HeaderCRC at offset 52 so the header CRC check still passes
+        var newCrc = CongaSharp.Protocol.Crc32C.ComputeHeaderCrc(data.AsSpan(0, FrameHeader.CrcOffset));
+        System.Buffers.Binary.BinaryPrimitives.WriteUInt32LittleEndian(data.AsSpan(52), newCrc);
+
+        using var ms2 = new MemoryStream(data);
+        var result = FrameReader.ReadFrame(ms2);
+        Assert.Equal(ErrorCodes.CompressionError, result.ErrorCode);
+    }
+
+    [Fact]
+    public void UncompressedLen_ExceedsMaxPayloadSize_Rejected()
+    {
+        using var ms = new MemoryStream();
+        // Write a frame compressed with LZ4 — uncompressed is large
+        var payload = new byte[1000];
+        FrameWriter.WriteFrame(ms, MsgType.Data, "", payload, compression: CompressionAlgorithm.LZ4, includePayloadCrc: false);
+        ms.Position = 0;
+
+        // maxPayloadSize smaller than the uncompressed payload
+        var result = FrameReader.ReadFrame(ms, maxPayloadSize: 500);
+        Assert.Equal(ErrorCodes.BufferExceeded, result.ErrorCode);
     }
 }

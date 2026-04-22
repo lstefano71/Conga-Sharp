@@ -28,13 +28,13 @@ public static class Crc32C
     }
 
     /// <summary>
-    /// Computes CRC-32C of the first 48 bytes of the header (everything except the HeaderCRC field itself).
+    /// Computes CRC-32C of the header bytes before the CRC field (bytes 0 to CrcOffset-1).
     /// </summary>
-    public static uint ComputeHeaderCrc(ReadOnlySpan<byte> headerFirst48Bytes)
+    public static uint ComputeHeaderCrc(ReadOnlySpan<byte> headerBytesBeforeCrc)
     {
-        if (headerFirst48Bytes.Length < 48)
-            throw new ArgumentException("Need at least 48 bytes for header CRC");
-        return Compute(headerFirst48Bytes[..48]);
+        if (headerBytesBeforeCrc.Length < FrameHeader.CrcOffset)
+            throw new ArgumentException($"Need at least {FrameHeader.CrcOffset} bytes for header CRC");
+        return Compute(headerBytesBeforeCrc[..FrameHeader.CrcOffset]);
     }
 
     /// <summary>

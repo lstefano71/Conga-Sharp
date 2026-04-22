@@ -358,31 +358,32 @@ int32_t conga_names(
 
 Conga-Sharp uses its own wire protocol, not compatible with original Conga. Every message on the wire consists of a **fixed header** followed by an optional **variable section**.
 
-### 8.2 Fixed Header (52 bytes)
+### 8.2 Fixed Header (56 bytes)
 
 ```
-Offset  Size  Field         Description
-──────  ────  ──────────    ──────────────────────────────────────────
- 0       1    Version       Protocol version (1 for MVP)
- 1       1    MsgType       Message type
- 2       2    Flags         Bit field (compression, features)
- 4       4    Magic         Magic number for stream validation
- 8      32    CmdName       Command name (UTF-8, null-padded, unused if not Command mode)
-40       4    HeadersLen    Length of user headers section in bytes
-44       4    PayloadLen    Length of payload section in bytes
-48       4    HeaderCRC     CRC-32C of bytes 0..47
+Offset  Size  Field            Description
+──────  ────  ──────────────   ──────────────────────────────────────────
+ 0       1    Version          Protocol version (1 for MVP)
+ 1       1    MsgType          Message type
+ 2       2    Flags            Bit field (compression, features)
+ 4       4    Magic            Magic number for stream validation
+ 8      32    CmdName          Command name (UTF-8, null-padded, unused if not Command mode)
+40       4    HeadersLen       Length of user headers section in bytes
+44       4    PayloadLen       Length of compressed payload on the wire
+48       4    UncompressedLen  Length of payload after decompression (= PayloadLen when compression is None)
+52       4    HeaderCRC        CRC-32C of bytes 0..51
 ```
 
-**Total fixed header: 52 bytes.**
+**Total fixed header: 56 bytes.**
 
 ### 8.3 Variable Section
 
 ```
 Offset          Size              Field         Description
 ──────          ────              ──────────    ──────────────────
-52              HeadersLen        UserHeaders   Key-value pairs
-52+HeadersLen   PayloadLen        Payload       Application data
-52+H+P          4                 PayloadCRC    CRC-32C of UserHeaders + Payload
+56              HeadersLen        UserHeaders   Key-value pairs
+56+HeadersLen   PayloadLen        Payload       Application data (compressed if Flags indicate)
+56+H+P          4                 PayloadCRC    CRC-32C of UserHeaders + Payload
 ```
 
 The PayloadCRC field is present only when the `HasPayloadCRC` flag is set.
@@ -407,11 +408,12 @@ The PayloadCRC field is present only when the `HasPayloadCRC` flag is set.
 
 ### 8.6 CRC Validation Strategy
 
-1. **Read 52 bytes** (fixed header)
-2. **Validate HeaderCRC** (CRC-32C of bytes 0–47) — if invalid, close connection (corrupt stream)
-3. **Check PayloadLen** — if exceeding buffer limits, reject before allocating
+1. **Read 56 bytes** (fixed header)
+2. **Validate HeaderCRC** (CRC-32C of bytes 0–51) — if invalid, close connection (corrupt stream)
+3. **Check PayloadLen and UncompressedLen** — if either exceeds buffer limits, reject before allocating
 4. **Read variable section** (HeadersLen + PayloadLen + optional 4 bytes CRC)
-5. **Validate PayloadCRC** if HasPayloadCRC flag set (CRC-32C of UserHeaders + Payload)
+5. **Validate PayloadCRC** if HasPayloadCRC flag set (CRC-32C of UserHeaders + compressed Payload)
+6. **Decompress** and verify decompressed length equals `UncompressedLen` — detect corrupt compressed data
 
 This two-stage CRC design prevents wasteful allocations on corrupt or malicious data.
 
@@ -433,6 +435,8 @@ Compression is **per-message**, indicated by the Flags compression bits:
 - **4–7 = Reserved**
 
 The sender selects the algorithm; the receiver reads the Flags to determine how to decompress. No connection-level handshake — both sides must support all algorithms.
+
+The `UncompressedLen` header field always carries the original payload size before compression. When compression is `None`, `UncompressedLen == PayloadLen`. The receiver verifies that the decompressed output length equals `UncompressedLen`; a mismatch indicates a corrupt compressed stream and is reported as `CompressionError` (2004).
 
 ### 8.9 Mode-Specific Behavior
 

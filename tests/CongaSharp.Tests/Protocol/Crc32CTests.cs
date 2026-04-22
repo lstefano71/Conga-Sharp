@@ -38,9 +38,9 @@ public class Crc32CTests
     }
 
     [Fact]
-    public void ComputeHeaderCrc_Uses48Bytes()
+    public void ComputeHeaderCrc_UsesCrcOffsetBytes()
     {
-        var header = new byte[52];
+        var header = new byte[FrameHeader.Size];
         header[0] = 1; // version
         var crc = Crc32C.ComputeHeaderCrc(header);
         Assert.NotEqual(0u, crc); // non-trivial data

@@ -7,9 +7,9 @@ using CongaSharp.Protocol;
 public class FrameHeaderTests
 {
     [Fact]
-    public void Size_Is52()
+    public void Size_Is56()
     {
-        Assert.Equal(52, FrameHeader.Size);
+        Assert.Equal(56, FrameHeader.Size);
     }
 
     [Fact]
@@ -23,7 +23,8 @@ public class FrameHeaderTests
             Magic = 0xDEADBEEF,
             CmdName = "MyCommand",
             HeadersLen = 128,
-            PayloadLen = 4096,
+            PayloadLen = 2048,
+            UncompressedLen = 4096,
             HeaderCrc = 0x12345678
         };
 
@@ -38,6 +39,7 @@ public class FrameHeaderTests
         Assert.Equal(original.CmdName, decoded.CmdName);
         Assert.Equal(original.HeadersLen, decoded.HeadersLen);
         Assert.Equal(original.PayloadLen, decoded.PayloadLen);
+        Assert.Equal(original.UncompressedLen, decoded.UncompressedLen);
         Assert.Equal(original.HeaderCrc, decoded.HeaderCrc);
     }
 
@@ -111,6 +113,31 @@ public class FrameHeaderTests
         var buf = new byte[FrameHeader.Size];
         header.WriteTo(buf);
         Assert.Equal(0x03, buf[1]);
+    }
+
+    [Fact]
+    public void ByteLayout_UncompressedLen_AtOffset48()
+    {
+        var header = new FrameHeader { Version = 1, MsgType = MsgType.Data, UncompressedLen = 0x01020304u };
+        var buf = new byte[FrameHeader.Size];
+        header.WriteTo(buf);
+        // Little-endian: 0x01020304 → bytes 04 03 02 01
+        Assert.Equal(0x04, buf[48]);
+        Assert.Equal(0x03, buf[49]);
+        Assert.Equal(0x02, buf[50]);
+        Assert.Equal(0x01, buf[51]);
+    }
+
+    [Fact]
+    public void ByteLayout_HeaderCrc_AtOffset52()
+    {
+        var header = new FrameHeader { Version = 1, MsgType = MsgType.Data, HeaderCrc = 0xAABBCCDDu };
+        var buf = new byte[FrameHeader.Size];
+        header.WriteTo(buf);
+        Assert.Equal(0xDD, buf[52]);
+        Assert.Equal(0xCC, buf[53]);
+        Assert.Equal(0xBB, buf[54]);
+        Assert.Equal(0xAA, buf[55]);
     }
 
     [Fact]

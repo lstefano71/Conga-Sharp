@@ -21,6 +21,7 @@ public static class FrameWriter
         bool includePayloadCrc = true)
     {
         var compressedPayload = Compression.Compress(compression, payload);
+        var uncompressedLen = (uint)payload.Length;
 
         var headersBytes = (userHeaders != null && userHeaders.Count > 0)
             ? UserHeaders.Encode(userHeaders)
@@ -38,6 +39,7 @@ public static class FrameWriter
             CmdName = cmdName ?? "",
             HeadersLen = (uint)headersBytes.Length,
             PayloadLen = (uint)compressedPayload.Length,
+            UncompressedLen = uncompressedLen,
             HeaderCrc = 0
         };
 

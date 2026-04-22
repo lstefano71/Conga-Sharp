@@ -4,13 +4,13 @@ using System.Buffers.Binary;
 using System.Text;
 
 /// <summary>
-/// 52-byte wire protocol frame header.
+/// 56-byte wire protocol frame header.
 /// Serialized in little-endian byte order.
 /// </summary>
 public struct FrameHeader
 {
-    public const int Size = 52;
-    public const int CrcOffset = 48;
+    public const int Size = 56;
+    public const int CrcOffset = 52;
     public const byte CurrentVersion = 1;
 
     public byte Version;        // offset 0
@@ -20,10 +20,11 @@ public struct FrameHeader
     public string CmdName;      // offset 8, 32 bytes UTF-8 null-padded
     public uint HeadersLen;     // offset 40
     public uint PayloadLen;     // offset 44
-    public uint HeaderCrc;      // offset 48
+    public uint UncompressedLen; // offset 48: original payload size before compression (= PayloadLen when not compressed)
+    public uint HeaderCrc;      // offset 52
 
     /// <summary>
-    /// Writes the header to a 52-byte span. Does NOT compute HeaderCrc — caller must do that after.
+    /// Writes the header to a 56-byte span. Does NOT compute HeaderCrc — caller must do that after.
     /// </summary>
     public readonly void WriteTo(Span<byte> buffer)
     {
@@ -49,11 +50,12 @@ public struct FrameHeader
 
         BinaryPrimitives.WriteUInt32LittleEndian(buffer[40..], HeadersLen);
         BinaryPrimitives.WriteUInt32LittleEndian(buffer[44..], PayloadLen);
-        BinaryPrimitives.WriteUInt32LittleEndian(buffer[48..], HeaderCrc);
+        BinaryPrimitives.WriteUInt32LittleEndian(buffer[48..], UncompressedLen);
+        BinaryPrimitives.WriteUInt32LittleEndian(buffer[52..], HeaderCrc);
     }
 
     /// <summary>
-    /// Reads a header from a 52-byte span.
+    /// Reads a header from a 56-byte span.
     /// </summary>
     public static FrameHeader ReadFrom(ReadOnlySpan<byte> buffer)
     {
@@ -68,7 +70,8 @@ public struct FrameHeader
             Magic = BinaryPrimitives.ReadUInt32LittleEndian(buffer[4..]),
             HeadersLen = BinaryPrimitives.ReadUInt32LittleEndian(buffer[40..]),
             PayloadLen = BinaryPrimitives.ReadUInt32LittleEndian(buffer[44..]),
-            HeaderCrc = BinaryPrimitives.ReadUInt32LittleEndian(buffer[48..])
+            UncompressedLen = BinaryPrimitives.ReadUInt32LittleEndian(buffer[48..]),
+            HeaderCrc = BinaryPrimitives.ReadUInt32LittleEndian(buffer[52..])
         };
 
         // Read CmdName: find first null in the 32-byte region

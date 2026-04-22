@@ -26,13 +26,13 @@ public static class FrameReader
     /// </summary>
     public static FrameReadResult ReadFrame(Stream stream, int maxPayloadSize = 64 * 1024 * 1024)
     {
-        // Stage 1: Read 52-byte header
+        // Stage 1: Read 56-byte header
         var headerBuf = new byte[FrameHeader.Size];
         var bytesRead = ReadExact(stream, headerBuf);
         if (bytesRead < FrameHeader.Size)
             return new FrameReadResult { ErrorCode = ErrorCodes.SocketClosed };
 
-        // Stage 2: Validate header CRC (bytes 0-47 vs bytes 48-51)
+        // Stage 2: Validate header CRC (bytes 0-51 vs bytes 52-55)
         var expectedCrc = Crc32C.ComputeHeaderCrc(headerBuf.AsSpan(0, FrameHeader.CrcOffset));
         var actualCrc = BinaryPrimitives.ReadUInt32LittleEndian(headerBuf.AsSpan(FrameHeader.CrcOffset));
         if (expectedCrc != actualCrc)
@@ -40,8 +40,8 @@ public static class FrameReader
 
         var header = FrameHeader.ReadFrom(headerBuf);
 
-        // Stage 3: Validate payload size before allocating
-        if (header.PayloadLen > maxPayloadSize)
+        // Stage 3: Validate both wire and decompressed sizes before allocating
+        if (header.PayloadLen > maxPayloadSize || header.UncompressedLen > maxPayloadSize)
             return new FrameReadResult { ErrorCode = ErrorCodes.BufferExceeded, Header = header };
 
         // Stage 4: Read user headers
@@ -76,7 +76,7 @@ public static class FrameReader
                 return new FrameReadResult { ErrorCode = ErrorCodes.CrcFailure, Header = header };
         }
 
-        // Stage 7: Decompress payload
+        // Stage 7: Decompress payload and verify uncompressed size
         byte[] payload;
         try
         {
@@ -87,6 +87,9 @@ public static class FrameReader
         {
             return new FrameReadResult { ErrorCode = ErrorCodes.CompressionError, Header = header };
         }
+
+        if (payload.Length != (int)header.UncompressedLen)
+            return new FrameReadResult { ErrorCode = ErrorCodes.CompressionError, Header = header };
 
         // Stage 8: Decode user headers
         var userHeaders = FrameFlags.GetHasUserHeaders(header.Flags) && headersBytes.Length > 0
