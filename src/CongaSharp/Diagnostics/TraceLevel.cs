@@ -6,9 +6,9 @@ namespace CongaSharp.Diagnostics;
 /// </summary>
 public enum TraceLevel
 {
-    Off = 0,
-    Errors = 1,
-    Connections = 2,
-    Messages = 3,
-    Wire = 4
+  Off = 0,
+  Errors = 1,
+  Connections = 2,
+  Messages = 3,
+  Wire = 4
 }

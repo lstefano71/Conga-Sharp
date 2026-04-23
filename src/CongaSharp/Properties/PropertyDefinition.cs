@@ -7,16 +7,16 @@ using CongaSharp.Core;
 /// </summary>
 public sealed class PropertyDefinition
 {
-    public string Name { get; }
-    public string DefaultJson { get; }
-    public bool ReadOnly { get; }
-    public ObjectType[] ApplicableTo { get; }
+  public string Name { get; }
+  public string DefaultJson { get; }
+  public bool ReadOnly { get; }
+  public ObjectType[] ApplicableTo { get; }
 
-    public PropertyDefinition(string name, string defaultJson, bool readOnly, params ObjectType[] applicableTo)
-    {
-        Name = name;
-        DefaultJson = defaultJson;
-        ReadOnly = readOnly;
-        ApplicableTo = applicableTo;
-    }
+  public PropertyDefinition(string name, string defaultJson, bool readOnly, params ObjectType[] applicableTo)
+  {
+    Name = name;
+    DefaultJson = defaultJson;
+    ReadOnly = readOnly;
+    ApplicableTo = applicableTo;
+  }
 }

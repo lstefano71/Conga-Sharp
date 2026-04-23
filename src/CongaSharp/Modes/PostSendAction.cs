@@ -5,8 +5,8 @@ namespace CongaSharp.Modes;
 /// </summary>
 public enum PostSendAction
 {
-    None = 0,
-    CloseConnection = 1,
-    CloseCommand = 2,
-    EmitSentEvent = 3
+  None = 0,
+  CloseConnection = 1,
+  CloseCommand = 2,
+  EmitSentEvent = 3
 }

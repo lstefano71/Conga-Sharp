@@ -5,13 +5,12 @@ namespace CongaSharp.Modes;
 /// </summary>
 public static class ModeFactory
 {
-    public static IConnectionMode Create(ModeKind kind) => kind switch
-    {
-        ModeKind.Raw => new RawMode(),
-        ModeKind.Text => new TextMode(),
-        ModeKind.BlkRaw => new BlkRawMode(),
-        ModeKind.BlkText => new BlkTextMode(),
-        ModeKind.Command => new CommandMode(),
-        _ => throw new ArgumentOutOfRangeException(nameof(kind), kind, "Unknown connection mode")
-    };
+  public static IConnectionMode Create(ModeKind kind) => kind switch {
+    ModeKind.Raw => new RawMode(),
+    ModeKind.Text => new TextMode(),
+    ModeKind.BlkRaw => new BlkRawMode(),
+    ModeKind.BlkText => new BlkTextMode(),
+    ModeKind.Command => new CommandMode(),
+    _ => throw new ArgumentOutOfRangeException(nameof(kind), kind, "Unknown connection mode")
+  };
 }
