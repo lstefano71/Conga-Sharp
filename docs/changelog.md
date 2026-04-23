@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+### Fix: Tracked mailbox re-enqueue no longer loses events after terminal response
+
+**Issue:** In tracked Command mode, if a terminal response had already completed the mailbox writer and `conga_wait` then had to re-enqueue an earlier event (for example, object/event output buffer too small), `ReEnqueue` attempted `ChannelWriter.TryWrite` on a completed channel. The write failed and the event was silently dropped.
+
+**Resolution:** `CommandMailbox` now has a dedicated requeue path that remains valid even after channel completion. `EventQueue.ReEnqueue` uses this mailbox requeue path, and `TryReceive` prioritizes requeued events so delivery semantics remain correct for retry scenarios.
+
 ### Breaking: `conga_send` ABI change — new `track` parameter for race-safe Command mode
 
 **Issue:** "Fast Server / Slow Client" race condition in Command mode. When `conga_send` returns a handle to APL and APL spawns a specific `conga_wait` on that handle, the server's response can arrive during the gap between the two calls. A broad catch-all waiter (e.g. `conga_wait("C1", ...)`) steals the response, leaving the specific waiter blocked forever.

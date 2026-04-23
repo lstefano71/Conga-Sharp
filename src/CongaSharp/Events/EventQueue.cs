@@ -235,7 +235,7 @@ public sealed class EventQueue : IDisposable
 
     /// <summary>
     /// Re-enqueues an event that could not be delivered (e.g., buffer too small).
-    /// Mailbox-aware: if a mailbox exists for the event, re-posts there instead of the global queue.
+    /// Mailbox-aware: if a mailbox exists for the event, requeues there instead of the global queue.
     /// </summary>
     public void ReEnqueue(CongaEvent evt)
     {
@@ -244,7 +244,7 @@ public sealed class EventQueue : IDisposable
         // Route back to mailbox if one exists
         if (_mailboxes.TryGetValue(evt.ObjectName, out var mailbox))
         {
-            mailbox.Post(evt);
+            mailbox.Requeue(evt);
             return;
         }
 

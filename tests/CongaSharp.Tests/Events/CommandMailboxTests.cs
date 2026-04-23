@@ -118,4 +118,21 @@ public class CommandMailboxTests
         Assert.Equal("A", mailbox.TryReceive(100)!.ObjectName);
         Assert.Equal("B", mailbox.TryReceive(100)!.ObjectName);
     }
+
+    [Fact]
+    public void Requeue_AfterComplete_PreservesEvent()
+    {
+        using var mailbox = new CommandMailbox();
+        mailbox.Post(new CongaEvent { ObjectName = "C1.Cmd", Type = EventType.Receive, IsTerminal = true });
+        mailbox.Complete();
+
+        var terminal = mailbox.TryReceive(100);
+        Assert.NotNull(terminal);
+        Assert.True(mailbox.IsCompleted);
+
+        mailbox.Requeue(terminal!);
+        var replay = mailbox.TryReceive(100);
+        Assert.NotNull(replay);
+        Assert.Equal(EventType.Receive, replay!.Type);
+    }
 }

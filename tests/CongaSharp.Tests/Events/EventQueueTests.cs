@@ -374,6 +374,30 @@ public class EventQueueTests
     }
 
     [Fact]
+    public void Mailbox_ReEnqueue_AfterTerminalCompletion_DoesNotLoseEvent()
+    {
+        using var queue = new EventQueue();
+        queue.RegisterMailbox("C1.Auto0");
+
+        queue.Enqueue(new CongaEvent { ObjectName = "C1.Auto0", Type = EventType.Progress, Payload = [1] });
+        queue.Enqueue(new CongaEvent { ObjectName = "C1.Auto0", Type = EventType.Receive, Payload = [2], IsTerminal = true });
+
+        var first = queue.Wait("C1.Auto0", 100);
+        Assert.Equal(EventType.Progress, first.Type);
+
+        // Simulate conga_wait buffer-too-small path: event must be put back
+        // even though terminal event already completed the mailbox writer.
+        queue.ReEnqueue(first);
+
+        var replay = queue.Wait("C1.Auto0", 100);
+        Assert.Equal(EventType.Progress, replay.Type);
+
+        var terminal = queue.Wait("C1.Auto0", 100);
+        Assert.Equal(EventType.Receive, terminal.Type);
+        Assert.True(terminal.IsTerminal);
+    }
+
+    [Fact]
     public void Mailbox_UnregisterByPrefix_DeliversClosedEvents()
     {
         using var queue = new EventQueue();

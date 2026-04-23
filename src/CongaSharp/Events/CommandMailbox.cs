@@ -1,5 +1,6 @@
 namespace CongaSharp.Events;
 
+using System.Collections.Concurrent;
 using System.Threading.Channels;
 
 /// <summary>
@@ -10,6 +11,7 @@ public sealed class CommandMailbox : IDisposable
 {
     private readonly Channel<CongaEvent> _channel = Channel.CreateUnbounded<CongaEvent>(
         new UnboundedChannelOptions { SingleReader = false, SingleWriter = false });
+    private readonly ConcurrentQueue<CongaEvent> _requeued = new();
     private volatile bool _completed;
     private int _disposed;
 
@@ -23,11 +25,25 @@ public sealed class CommandMailbox : IDisposable
     }
 
     /// <summary>
+    /// Re-enqueues an event to the front of mailbox delivery order.
+    /// This is used when marshaling fails (e.g., buffer too small) after an event
+    /// has already been dequeued by Wait. Works even if the channel writer is complete.
+    /// </summary>
+    public void Requeue(CongaEvent evt)
+    {
+        _requeued.Enqueue(evt);
+    }
+
+    /// <summary>
     /// Blocks until an event is available or timeout expires.
     /// Returns null on timeout or cancellation.
     /// </summary>
     public CongaEvent? TryReceive(int timeoutMs, CancellationToken cancellationToken = default)
     {
+        // Re-enqueued events have priority: caller already consumed them once.
+        if (_requeued.TryDequeue(out var requeued))
+            return requeued;
+
         using var timeoutCts = new CancellationTokenSource(timeoutMs);
         using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(
             timeoutCts.Token, cancellationToken);
@@ -61,7 +77,7 @@ public sealed class CommandMailbox : IDisposable
     /// <summary>
     /// True after Complete() has been called AND the channel has no remaining events.
     /// </summary>
-    public bool IsCompleted => _completed && _channel.Reader.Count == 0;
+    public bool IsCompleted => _completed && _requeued.IsEmpty && _channel.Reader.Count == 0;
 
     /// <summary>
     /// True after Complete() has been called (regardless of remaining events).
@@ -71,7 +87,7 @@ public sealed class CommandMailbox : IDisposable
     /// <summary>
     /// Number of events currently buffered.
     /// </summary>
-    public int Count => _channel.Reader.Count;
+    public int Count => _requeued.Count + _channel.Reader.Count;
 
     public void Dispose()
     {
