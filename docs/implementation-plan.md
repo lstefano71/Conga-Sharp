@@ -48,7 +48,7 @@ Conga-Sharp/
 │       │   └── HandleTable.cs          # GCHandle-based handle ↔ Root mapping
 │       │
 │       ├── Protocol/
-│       │   ├── FrameHeader.cs          # 52-byte wire frame header struct
+│       │   ├── FrameHeader.cs          # 40-byte wire frame header struct (CorrelationId)
 │       │   ├── FrameReader.cs          # Reads frames from a stream
 │       │   ├── FrameWriter.cs          # Writes frames to a stream
 │       │   ├── MsgType.cs              # Enum: Data, Respond, Progress, Control
@@ -63,7 +63,7 @@ Conga-Sharp/
 │       │   ├── TextMode.cs             # Text: EOM-delimited
 │       │   ├── BlkRawMode.cs           # BlkRaw: length-prefixed binary
 │       │   ├── BlkTextMode.cs          # BlkText: length-prefixed text
-│       │   └── CommandMode.cs          # Command: named cmds, Respond, Progress
+│       │   └── CommandMode.cs          # Command: named cmds, Respond, Progress, Guid↔CmdName correlation maps
 │       │
 │       ├── Events/
 │       │   ├── EventType.cs            # Enum with 9 event types
@@ -179,13 +179,13 @@ Conga-Sharp/
 **Goal:** Frame serialization/deserialization with CRC and compression.
 
 **Tasks:**
-1. **FrameHeader struct** (`FrameHeader.cs`) — 52-byte `[StructLayout(LayoutKind.Sequential)]`, pack=1. Fields: Version, MsgType, Flags, Magic, CmdName (32-byte fixed), HeadersLen, PayloadLen, HeaderCRC.
-2. **CRC-32C** (`Crc32C.cs`) — thin wrapper over `System.IO.Hashing.Crc32C`. Methods: `ComputeHeaderCrc(ReadOnlySpan<byte> header48)`, `ComputePayloadCrc(ReadOnlySpan<byte> data)`.
+1. **FrameHeader struct** (`FrameHeader.cs`) — 40-byte fixed header. Fields: Version, MsgType, Flags, Magic, CorrelationId (16-byte Guid LE), HeadersLen, PayloadLen, UncompressedLen, HeaderCRC. The CorrelationId replaces the former 32-byte CmdName field; command names are resolved locally via CommandMode's per-connection bidirectional map.
+2. **CRC-32C** (`Crc32C.cs`) — thin wrapper over `System.IO.Hashing.Crc32C`. Methods: `ComputeHeaderCrc(ReadOnlySpan<byte> header36)`, `ComputePayloadCrc(ReadOnlySpan<byte> data)`.
 3. **FrameFlags** (`FrameFlags.cs`) — helpers to pack/unpack the 16-bit flags field (compression algo, has-headers, has-CRC).
 4. **Compression** (`Compression.cs`) — dispatcher: `Compress(algo, data) → byte[]`, `Decompress(algo, data, maxSize) → byte[]`. Implementations for None, Deflate, LZ4, Zstd.
 5. **UserHeaders** (`UserHeaders.cs`) — encode/decode length-prefixed key-value pairs to/from `Dictionary<string, byte[]>`.
-6. **FrameWriter** (`FrameWriter.cs`) — takes MsgType, cmdName, payload, headers, compression algo → writes complete frame to `Stream`. Computes both CRCs.
-7. **FrameReader** (`FrameReader.cs`) — reads from `Stream`. First reads 52 bytes, validates header CRC, then reads variable section, validates payload CRC, decompresses.
+6. **FrameWriter** (`FrameWriter.cs`) — takes MsgType, correlationId (Guid), payload, headers, compression algo → writes complete frame to `Stream`. Computes both CRCs.
+7. **FrameReader** (`FrameReader.cs`) — reads from `Stream`. First reads 40 bytes, validates header CRC, then reads variable section, validates payload CRC, decompresses.
 
 **Tests:**
 - FrameHeader: serialize/deserialize roundtrip, field offsets
@@ -242,11 +242,13 @@ Conga-Sharp/
 5. **BlkTextMode** — **framed**: same as BlkRaw but payload treated as text. May apply EOM within framed payload.
 6. **CommandMode**:
    - Track active commands per connection (`ConcurrentDictionary<string, CommandObject>`)
-   - On `conga_send` with a base client name: auto-generate `Auto00000000`-style command handle, create `CommandObject`, send Data frame with CmdName, return full handle via out_name buffer
-   - On `conga_send` with explicit `client.command` name: use as-is, create `CommandObject`, send Data frame
-   - On received Data frame with CmdName: create `CommandObject`, enqueue Receive event
-   - `conga_respond`: send Respond frame, close `CommandObject`
-   - `conga_progress`: send Progress frame, enqueue Progress event on receiver
+   - Maintain per-connection bidirectional map: `ConcurrentDictionary<Guid, string>` (wire→local) and `ConcurrentDictionary<string, Guid>` (local→wire)
+   - On `conga_send` with a base client name: auto-generate `Auto00000000`-style command handle, allocate a CorrelationId (Guid), store bidirectional mapping, send Data frame with CorrelationId, return full handle via out_name buffer. When `track=1`, register a per-command mailbox in EventQueue before sending — prevents Fast Server / Slow Client race.
+   - On `conga_send` with explicit `client.command` name: reuse existing CorrelationId if mapped, or allocate new one, send Data frame. `track=1` also supported.
+   - On received Data frame: read CorrelationId from header, resolve or create local command name via bidirectional map, create `CommandObject`, enqueue Receive event
+   - `conga_respond`: look up CorrelationId from local command name, send Respond frame, clear correlation mapping, close `CommandObject`
+   - `conga_progress`: look up CorrelationId from local command name, send Progress frame, enqueue Progress event on receiver
+   - On disconnect: clear all correlation mappings for the connection
    - Parallel commands: multiple `CommandObject`s per connection, independent lifecycles
    - Server-side `conga_send` in Command mode is rejected with `InvalidMode` (1010) — must use `conga_respond`/`conga_progress`
    - Wait filtering: `Wait("C1")` receives all command events; `Wait("C1.Auto00000000")` isolates one command
@@ -269,12 +271,16 @@ Conga-Sharp/
 
 **Tasks:**
 1. **EventQueue** (`EventQueue.cs`):
-   - `ConcurrentQueue<CongaEvent>` + `SemaphoreSlim` for blocking
-   - `Enqueue(event)` — add event, signal semaphore
-   - `Wait(objectFilter, timeout)` — block until matching event or timeout
-   - Object filtering: if name is specified, skip non-matching events (re-enqueue them)
-   - Shutdown: signal all waiters with error 2002
-2. **CongaEvent** (`CongaEvent.cs`) — struct: ObjectName, EventType (enum + string), Payload, UserHeaders, Timestamp
+   - `ConcurrentQueue<CongaEvent>` + `SemaphoreSlim` for blocking (global queue)
+   - `ConcurrentDictionary<string, CommandMailbox>` — per-command mailbox registry for tracked sends
+   - `Enqueue(event)` — routes to mailbox if registered for `evt.ObjectName`, else global queue. Terminal events (Respond) mark mailbox complete.
+   - `Wait(objectFilter, timeout)` — if filter exactly matches a mailbox key, reads from mailbox; otherwise scans global queue (unchanged). Auto-unregisters completed+empty mailboxes after read.
+   - `RegisterMailbox(objectName)` / `UnregisterMailbox(objectName)` — create/remove per-command mailboxes
+   - `UnregisterMailboxesByPrefix(prefix)` — on disconnect/close, posts Closed events to matching mailboxes and marks them complete
+   - `ReEnqueue(event)` — mailbox-aware: routes back to mailbox if registered, else global queue front
+   - Shutdown: delivers Error events to all mailboxes, then signals all global waiters with error 2002
+2. **CongaEvent** (`CongaEvent.cs`) — struct: ObjectName, EventType (enum + string), Payload, UserHeaders, Timestamp, IsTerminal (bool)
+3. **CommandMailbox** (`CommandMailbox.cs`) — per-command event buffer wrapping `System.Threading.Channels.Channel<CongaEvent>`. Used when `conga_send` is called with `track=1` in Command mode to prevent the Fast Server / Slow Client race condition.
 3. **Wait integration**: wire up all event producers (accept, receive, close, timeout, error) to enqueue events
 4. **Native export** for `conga_wait` — marshals event data to output buffers
 

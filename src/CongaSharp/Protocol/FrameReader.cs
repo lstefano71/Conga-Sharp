@@ -26,13 +26,13 @@ public static class FrameReader
     /// </summary>
     public static FrameReadResult ReadFrame(Stream stream, int maxPayloadSize = 64 * 1024 * 1024)
     {
-        // Stage 1: Read 56-byte header
+        // Stage 1: Read 40-byte header
         var headerBuf = new byte[FrameHeader.Size];
         var bytesRead = ReadExact(stream, headerBuf);
         if (bytesRead < FrameHeader.Size)
             return new FrameReadResult { ErrorCode = ErrorCodes.SocketClosed };
 
-        // Stage 2: Validate header CRC (bytes 0-51 vs bytes 52-55)
+        // Stage 2: Validate header CRC (bytes 0-35 vs bytes 36-39)
         var expectedCrc = Crc32C.ComputeHeaderCrc(headerBuf.AsSpan(0, FrameHeader.CrcOffset));
         var actualCrc = BinaryPrimitives.ReadUInt32LittleEndian(headerBuf.AsSpan(FrameHeader.CrcOffset));
         if (expectedCrc != actualCrc)

@@ -22,7 +22,7 @@ public static class AsyncFrameIO
         var headerBuf = pool.Rent(FrameHeader.Size);
         try
         {
-            // Stage 1: Read 52-byte header
+            // Stage 1: Read 40-byte header
             var bytesRead = await ReadExactAsync(stream, headerBuf, FrameHeader.Size, ct).ConfigureAwait(false);
             if (bytesRead < FrameHeader.Size)
                 return new FrameReadResult { ErrorCode = ErrorCodes.SocketClosed };
@@ -117,7 +117,7 @@ public static class AsyncFrameIO
     public static async Task WriteFrameAsync(
         Stream stream,
         MsgType msgType,
-        string cmdName,
+        Guid correlationId,
         ReadOnlyMemory<byte> payload,
         Dictionary<string, byte[]>? userHeaders,
         CompressionAlgorithm compression,
@@ -142,7 +142,7 @@ public static class AsyncFrameIO
             MsgType = msgType,
             Flags = flags,
             Magic = magic,
-            CmdName = cmdName ?? "",
+            CorrelationId = correlationId,
             HeadersLen = (uint)headersBytes.Length,
             PayloadLen = (uint)compressedPayload.Length,
             UncompressedLen = uncompressedLen,

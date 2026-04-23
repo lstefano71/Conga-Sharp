@@ -1,11 +1,16 @@
 namespace CongaSharp.Events;
 
+using System.Collections.Concurrent;
 using CongaSharp.Errors;
 
 /// <summary>
 /// Thread-safe event queue with filtered blocking Wait.
 /// Uses a lock-protected list + SemaphoreSlim for signaling.
 /// Supports multiple concurrent waiters filtering on different objects.
+///
+/// For Command mode with tracked sends (track=1), per-command mailboxes
+/// buffer events between Send and Wait, preventing the "fast server / slow client"
+/// race condition where a broad catch-all waiter could steal a specific command's response.
 /// </summary>
 public sealed class EventQueue : IDisposable
 {
@@ -17,8 +22,11 @@ public sealed class EventQueue : IDisposable
     private readonly SemaphoreSlim _signal = new(0);
     private volatile bool _shutdown;
 
+    // Per-command mailboxes for tracked sends (Command mode)
+    private readonly ConcurrentDictionary<string, CommandMailbox> _mailboxes = new(StringComparer.OrdinalIgnoreCase);
+
     /// <summary>
-    /// Number of events currently in the queue.
+    /// Number of events currently in the global queue (excludes mailboxed events).
     /// </summary>
     public int Count
     {
@@ -26,11 +34,87 @@ public sealed class EventQueue : IDisposable
     }
 
     /// <summary>
-    /// Enqueues an event and signals all waiters.
+    /// Number of active mailboxes.
+    /// </summary>
+    public int MailboxCount => _mailboxes.Count;
+
+    /// <summary>
+    /// Registers a per-command mailbox. Events with this exact ObjectName
+    /// will be routed to the mailbox instead of the global queue.
+    /// Must be called BEFORE sending bytes on the wire.
+    /// </summary>
+    public CommandMailbox RegisterMailbox(string objectName)
+    {
+        return _mailboxes.GetOrAdd(objectName, _ => new CommandMailbox());
+    }
+
+    /// <summary>
+    /// Removes and disposes a mailbox. Returns true if one was found.
+    /// </summary>
+    public bool UnregisterMailbox(string objectName)
+    {
+        if (_mailboxes.TryRemove(objectName, out var mailbox))
+        {
+            mailbox.Dispose();
+            return true;
+        }
+        return false;
+    }
+
+    /// <summary>
+    /// Completes all mailboxes whose keys start with the given prefix (dot-boundary match).
+    /// Posts a Closed event to each mailbox and marks it complete, but leaves it in the
+    /// registry for pending waiters to consume. Lazy cleanup in Wait removes it after
+    /// the last event is read.
+    /// Used on connection close/disconnect to clean up pending command mailboxes.
+    /// </summary>
+    public void UnregisterMailboxesByPrefix(string prefix)
+    {
+        foreach (var kvp in _mailboxes)
+        {
+            bool match = kvp.Key.Equals(prefix, StringComparison.OrdinalIgnoreCase)
+                || (kvp.Key.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)
+                    && kvp.Key.Length > prefix.Length
+                    && kvp.Key[prefix.Length] == '.');
+
+            if (match && !kvp.Value.IsMarkedComplete)
+            {
+                kvp.Value.Post(new CongaEvent
+                {
+                    ObjectName = kvp.Key,
+                    Type = EventType.Closed,
+                    IsTerminal = true
+                });
+                kvp.Value.Complete();
+            }
+        }
+    }
+
+    /// <summary>
+    /// Looks up a mailbox by exact name. Used for re-enqueue routing.
+    /// </summary>
+    public CommandMailbox? GetMailbox(string objectName)
+    {
+        _mailboxes.TryGetValue(objectName, out var mailbox);
+        return mailbox;
+    }
+
+    /// <summary>
+    /// Enqueues an event. If a mailbox exists for the event's ObjectName,
+    /// routes to the mailbox; otherwise adds to the global queue.
     /// </summary>
     public void Enqueue(CongaEvent evt)
     {
         if (_shutdown) return;
+
+        // Route to mailbox if one exists for this exact ObjectName
+        if (_mailboxes.TryGetValue(evt.ObjectName, out var mailbox))
+        {
+            mailbox.Post(evt);
+            if (evt.IsTerminal)
+                mailbox.Complete();
+            return;
+        }
 
         lock (_lock)
         {
@@ -44,7 +128,8 @@ public sealed class EventQueue : IDisposable
 
     /// <summary>
     /// Blocks until a matching event is found or timeout expires.
-    /// If objectFilter is null/empty/".", matches all events.
+    /// If objectFilter is null/empty/".", matches all events in the global queue.
+    /// For exact-match filters with a registered mailbox, reads from the mailbox instead.
     /// Returns a Timeout event if no match found within timeoutMs.
     /// On shutdown, returns error code 2002.
     /// </summary>
@@ -53,8 +138,32 @@ public sealed class EventQueue : IDisposable
         if (_shutdown)
             return MakeShutdownEvent(objectFilter);
 
-        var deadline = Environment.TickCount64 + timeoutMs;
         bool matchAll = string.IsNullOrEmpty(objectFilter) || objectFilter == ".";
+
+        // Fast path: exact-match filter with a registered mailbox
+        if (!matchAll && _mailboxes.TryGetValue(objectFilter!, out var mailbox))
+        {
+            var evt = mailbox.TryReceive(timeoutMs, shutdownToken);
+            if (evt != null)
+            {
+                // Lazy cleanup: if mailbox is complete and empty, unregister it
+                if (mailbox.IsCompleted)
+                    _mailboxes.TryRemove(objectFilter!, out _);
+                return evt;
+            }
+
+            if (_shutdown)
+                return MakeShutdownEvent(objectFilter);
+
+            return new CongaEvent
+            {
+                ObjectName = objectFilter!,
+                Type = EventType.Timeout
+            };
+        }
+
+        // Standard path: scan the global queue
+        var deadline = Environment.TickCount64 + timeoutMs;
 
         while (true)
         {
@@ -101,21 +210,44 @@ public sealed class EventQueue : IDisposable
 
     /// <summary>
     /// Signals shutdown: all current and future Wait calls return error 2002.
+    /// Also delivers shutdown events to all active mailboxes.
     /// </summary>
     public void SignalShutdown()
     {
         _shutdown = true;
-        // Wake all waiters by releasing a generous number of permits
+
+        // Deliver shutdown to all mailboxes
+        foreach (var kvp in _mailboxes)
+        {
+            kvp.Value.Post(new CongaEvent
+            {
+                ObjectName = kvp.Key,
+                Type = EventType.Error,
+                Payload = ShutdownPayload,
+                IsTerminal = true
+            });
+            kvp.Value.Complete();
+        }
+
+        // Wake all global queue waiters by releasing a generous number of permits
         try { _signal.Release(100); } catch (ObjectDisposedException) { }
     }
 
     /// <summary>
-    /// Re-enqueues an event at the front of the queue.
-    /// Used when a dequeued event cannot be delivered (e.g., buffer too small).
+    /// Re-enqueues an event that could not be delivered (e.g., buffer too small).
+    /// Mailbox-aware: if a mailbox exists for the event, re-posts there instead of the global queue.
     /// </summary>
     public void ReEnqueue(CongaEvent evt)
     {
         if (_shutdown) return;
+
+        // Route back to mailbox if one exists
+        if (_mailboxes.TryGetValue(evt.ObjectName, out var mailbox))
+        {
+            mailbox.Post(evt);
+            return;
+        }
+
         lock (_lock)
         {
             _events.AddFirst(evt);
@@ -126,6 +258,14 @@ public sealed class EventQueue : IDisposable
     public void Dispose()
     {
         SignalShutdown();
+
+        // Dispose all remaining mailboxes
+        foreach (var kvp in _mailboxes)
+        {
+            if (_mailboxes.TryRemove(kvp.Key, out var mailbox))
+                mailbox.Dispose();
+        }
+
         _signal.Dispose();
     }
 

@@ -215,6 +215,7 @@ public static partial class NativeExports
         int closeFlag,
         int compression,
         int compressionLevel,
+        int track,
         char* outName,
         int outNameCap,
         int* outNameLen)
@@ -306,6 +307,13 @@ public static partial class NativeExports
                 return ErrorCodes.BufferTooSmall;
             }
 
+            // Pre-register mailbox for tracked Command mode sends.
+            // This MUST happen before bytes hit the wire to prevent the
+            // "fast server / slow client" race condition.
+            bool tracked = track != 0 && isCommandMode;
+            if (tracked)
+                root.Events.RegisterMailbox(resolvedHandle);
+
             byte[]? rentedPayload = null;
             try
             {
@@ -327,7 +335,11 @@ public static partial class NativeExports
 
                 var postAction = (PostSendAction)closeFlag;
                 var msg = pipeline.Mode.PrepareOutbound(connName, payload, userHeaders, postAction, cmdName);
-                if (msg.ErrorCode != 0) return msg.ErrorCode;
+                if (msg.ErrorCode != 0)
+                {
+                    if (tracked) root.Events.UnregisterMailbox(resolvedHandle);
+                    return msg.ErrorCode;
+                }
 
                 msg.Compression = (Protocol.CompressionAlgorithm)compression;
                 msg.CompressionLevel = compressionLevel;
@@ -335,6 +347,12 @@ public static partial class NativeExports
                 pipeline.SendAsync(msg).GetAwaiter().GetResult();
 
                 HandlePostAction(root, resolvedHandle, connName, msg.PostAction);
+            }
+            catch
+            {
+                // Rollback mailbox on send failure
+                if (tracked) root.Events.UnregisterMailbox(resolvedHandle);
+                throw;
             }
             finally
             {
@@ -395,7 +413,8 @@ public static partial class NativeExports
                     payload = ReadOnlyMemory<byte>.Empty;
                 }
 
-                var msg = commandMode.PrepareRespond(connName, payload, cmdName);
+                var msg = commandMode.TryPrepareRespond(connName, payload, cmdName);
+                if (msg == null) return ErrorCodes.InvalidName;
                 msg.Compression = (Protocol.CompressionAlgorithm)compression;
                 msg.CompressionLevel = compressionLevel;
                 pipeline.SendAsync(msg).GetAwaiter().GetResult();
@@ -455,7 +474,8 @@ public static partial class NativeExports
                     payload = ReadOnlyMemory<byte>.Empty;
                 }
 
-                var msg = commandMode.PrepareProgress(connName, payload, cmdName);
+                var msg = commandMode.TryPrepareProgress(connName, payload, cmdName);
+                if (msg == null) return ErrorCodes.InvalidName;
                 msg.Compression = (Protocol.CompressionAlgorithm)compression;
                 msg.CompressionLevel = compressionLevel;
                 pipeline.SendAsync(msg).GetAwaiter().GetResult();

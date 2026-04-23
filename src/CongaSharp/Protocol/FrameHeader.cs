@@ -1,30 +1,29 @@
 namespace CongaSharp.Protocol;
 
 using System.Buffers.Binary;
-using System.Text;
 
 /// <summary>
-/// 56-byte wire protocol frame header.
+/// 40-byte wire protocol frame header.
 /// Serialized in little-endian byte order.
 /// </summary>
 public struct FrameHeader
 {
-    public const int Size = 56;
-    public const int CrcOffset = 52;
+    public const int Size = 40;
+    public const int CrcOffset = 36;
     public const byte CurrentVersion = 1;
 
-    public byte Version;        // offset 0
-    public MsgType MsgType;     // offset 1
-    public ushort Flags;        // offset 2
-    public uint Magic;          // offset 4
-    public string CmdName;      // offset 8, 32 bytes UTF-8 null-padded
-    public uint HeadersLen;     // offset 40
-    public uint PayloadLen;     // offset 44
-    public uint UncompressedLen; // offset 48: original payload size before compression (= PayloadLen when not compressed)
-    public uint HeaderCrc;      // offset 52
+    public byte Version;          // offset 0
+    public MsgType MsgType;       // offset 1
+    public ushort Flags;          // offset 2
+    public uint Magic;            // offset 4
+    public Guid CorrelationId;    // offset 8, 16 bytes little-endian
+    public uint HeadersLen;       // offset 24
+    public uint PayloadLen;       // offset 28
+    public uint UncompressedLen;  // offset 32: original payload size before compression (= PayloadLen when not compressed)
+    public uint HeaderCrc;        // offset 36
 
     /// <summary>
-    /// Writes the header to a 56-byte span. Does NOT compute HeaderCrc — caller must do that after.
+    /// Writes the header to a 40-byte span. Does NOT compute HeaderCrc — caller must do that after.
     /// </summary>
     public readonly void WriteTo(Span<byte> buffer)
     {
@@ -36,50 +35,34 @@ public struct FrameHeader
         BinaryPrimitives.WriteUInt16LittleEndian(buffer[2..], Flags);
         BinaryPrimitives.WriteUInt32LittleEndian(buffer[4..], Magic);
 
-        // CmdName: 32 bytes UTF-8, null-padded
-        buffer.Slice(8, 32).Clear();
-        if (!string.IsNullOrEmpty(CmdName))
-        {
-            var cmdSpan = CmdName.AsSpan();
-            // Truncate to fit in 31 bytes (leave room for null terminator)
-            while (cmdSpan.Length > 0 && Encoding.UTF8.GetByteCount(cmdSpan) > 31)
-                cmdSpan = cmdSpan[..^1];
-            if (cmdSpan.Length > 0)
-                Encoding.UTF8.GetBytes(cmdSpan, buffer.Slice(8, 32));
-        }
+        // CorrelationId: 16 bytes little-endian
+        CorrelationId.TryWriteBytes(buffer.Slice(8, 16), bigEndian: false, out _);
 
-        BinaryPrimitives.WriteUInt32LittleEndian(buffer[40..], HeadersLen);
-        BinaryPrimitives.WriteUInt32LittleEndian(buffer[44..], PayloadLen);
-        BinaryPrimitives.WriteUInt32LittleEndian(buffer[48..], UncompressedLen);
-        BinaryPrimitives.WriteUInt32LittleEndian(buffer[52..], HeaderCrc);
+        BinaryPrimitives.WriteUInt32LittleEndian(buffer[24..], HeadersLen);
+        BinaryPrimitives.WriteUInt32LittleEndian(buffer[28..], PayloadLen);
+        BinaryPrimitives.WriteUInt32LittleEndian(buffer[32..], UncompressedLen);
+        BinaryPrimitives.WriteUInt32LittleEndian(buffer[36..], HeaderCrc);
     }
 
     /// <summary>
-    /// Reads a header from a 56-byte span.
+    /// Reads a header from a 40-byte span.
     /// </summary>
     public static FrameHeader ReadFrom(ReadOnlySpan<byte> buffer)
     {
         if (buffer.Length < Size)
             throw new ArgumentException($"Buffer must be at least {Size} bytes");
 
-        var header = new FrameHeader
+        return new FrameHeader
         {
             Version = buffer[0],
             MsgType = (MsgType)buffer[1],
             Flags = BinaryPrimitives.ReadUInt16LittleEndian(buffer[2..]),
             Magic = BinaryPrimitives.ReadUInt32LittleEndian(buffer[4..]),
-            HeadersLen = BinaryPrimitives.ReadUInt32LittleEndian(buffer[40..]),
-            PayloadLen = BinaryPrimitives.ReadUInt32LittleEndian(buffer[44..]),
-            UncompressedLen = BinaryPrimitives.ReadUInt32LittleEndian(buffer[48..]),
-            HeaderCrc = BinaryPrimitives.ReadUInt32LittleEndian(buffer[52..])
+            CorrelationId = new Guid(buffer.Slice(8, 16), bigEndian: false),
+            HeadersLen = BinaryPrimitives.ReadUInt32LittleEndian(buffer[24..]),
+            PayloadLen = BinaryPrimitives.ReadUInt32LittleEndian(buffer[28..]),
+            UncompressedLen = BinaryPrimitives.ReadUInt32LittleEndian(buffer[32..]),
+            HeaderCrc = BinaryPrimitives.ReadUInt32LittleEndian(buffer[36..])
         };
-
-        // Read CmdName: find first null in the 32-byte region
-        var cmdSpan = buffer.Slice(8, 32);
-        var nullIdx = cmdSpan.IndexOf((byte)0);
-        var cmdLen = nullIdx >= 0 ? nullIdx : 32;
-        header.CmdName = cmdLen > 0 ? Encoding.UTF8.GetString(cmdSpan[..cmdLen]) : "";
-
-        return header;
     }
 }

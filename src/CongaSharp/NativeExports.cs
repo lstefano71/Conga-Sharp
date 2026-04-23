@@ -91,6 +91,9 @@ public static partial class NativeExports
             var removed = root.Registry.RemoveTree(objName);
             if (removed.Count == 0) return ErrorCodes.InvalidName;
 
+            // Clean up any command mailboxes for the closed object and its children
+            root.Events.UnregisterMailboxesByPrefix(objName);
+
             foreach (var obj in removed)
             {
                 try

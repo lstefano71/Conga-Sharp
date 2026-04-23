@@ -423,16 +423,6 @@ public class FullIntegrationTests : IAsyncLifetime
     private static async Task SendReply(
         CongaSharp.Networking.SocketPipeline pipeline, string mode, byte[] payload, string connName)
     {
-        IConnectionMode modeObj = mode switch
-        {
-            "Raw" => new RawMode(),
-            "Text" => new TextMode(),
-            "BlkRaw" => new BlkRawMode(),
-            "BlkText" => new BlkTextMode(),
-            "Command" => new CommandMode(),
-            _ => throw new ArgumentException($"Unknown mode: {mode}")
-        };
-
         byte[] sendData = payload;
         if (mode == "Text")
         {
@@ -443,15 +433,43 @@ public class FullIntegrationTests : IAsyncLifetime
 
         if (mode == "Command")
         {
-            var cmdMode = (CommandMode)modeObj;
-            var msg = cmdMode.PrepareRespond(connName, sendData, "TestCmd");
+            // Use the pipeline's own CommandMode which has the correlation maps from received frames
+            var cmdMode = (CommandMode)pipeline.Mode;
+            // Find the first active command to respond to
+            var cmdName = GetFirstActiveCommand(cmdMode, connName);
+            var msg = cmdMode.TryPrepareRespond(connName, sendData, cmdName);
+            Assert.NotNull(msg);
             await pipeline.SendAsync(msg);
         }
         else
         {
+            IConnectionMode modeObj = mode switch
+            {
+                "Raw" => new RawMode(),
+                "Text" => new TextMode(),
+                "BlkRaw" => new BlkRawMode(),
+                "BlkText" => new BlkTextMode(),
+                _ => throw new ArgumentException($"Unknown mode: {mode}")
+            };
             var msg = modeObj.PrepareOutbound(connName, sendData, null, PostSendAction.None, null);
             await pipeline.SendAsync(msg);
         }
+    }
+
+    /// <summary>
+    /// Finds the first active command name for a connection via reflection on CommandMode's internal state.
+    /// Used by integration tests to discover server-side auto-generated command names.
+    /// </summary>
+    private static string GetFirstActiveCommand(CommandMode cmdMode, string connName)
+    {
+        // Use IsCommandActive with known patterns — the receiver generates Cmd00000000 names
+        for (int i = 0; i < 100; i++)
+        {
+            var name = $"Cmd{i:D8}";
+            if (cmdMode.IsCommandActive(connName, name))
+                return name;
+        }
+        throw new InvalidOperationException($"No active command found for {connName}");
     }
 
     private static double ThroughputMbPerSec(int bytes, double elapsedMs)

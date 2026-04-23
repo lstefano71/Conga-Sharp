@@ -119,6 +119,7 @@ class CongaApi:
             ctypes.c_int,
             ctypes.c_int,
             ctypes.c_int,
+            ctypes.c_int,       # track: 0=global queue, 1=per-command mailbox
             ctypes.c_wchar_p,
             ctypes.c_int,
             ctypes.POINTER(ctypes.c_int),
@@ -305,8 +306,14 @@ class CongaApi:
         close_flag: int = 0,
         compression: int = 0,
         compression_level: int = 0,
+        track: int = 0,
     ) -> str:
-        """Send data and return the resolved handle name."""
+        """Send data and return the resolved handle name.
+
+        Args:
+            track: 0=events go to global queue (default), 1=create per-command
+                   mailbox for race-safe specific Wait (Command mode only).
+        """
         data_buff, data_len = _build_u8_buffer(data)
         hdr_buff, hdr_len = _build_u8_buffer(headers)
         out_name = ctypes.create_unicode_buffer(256)
@@ -321,6 +328,7 @@ class CongaApi:
             close_flag,
             compression,
             compression_level,
+            track,
             out_name,
             256,
             ctypes.byref(out_name_len),

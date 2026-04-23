@@ -43,7 +43,7 @@
       ⎕NA'I4 ',DllPath,'|conga_clt_create P <0T <0T I4 <0T I4 >0T[] I4 >I4'
       ⎕NA'I4 ',DllPath,'|conga_clt_connect P <0T I4'
       ⎕NA'I4 ',DllPath,'|conga_wait P <0T I4 >0T[] I4 >0T[] I4 >I4 >U1[] I4 >I4 >U1[] I4 >I4'
-      ⎕NA'I4 ',DllPath,'|conga_send P <0T <U1[] I4 <U1[] I4 I4 I4 I4 >0T[] I4 >I4'
+      ⎕NA'I4 ',DllPath,'|conga_send P <0T <U1[] I4 <U1[] I4 I4 I4 I4 I4 >0T[] I4 >I4'
       ⎕NA'I4 ',DllPath,'|conga_respond P <0T <U1[] I4 I4 I4'
       ⎕NA'I4 ',DllPath,'|conga_progress P <0T <U1[] I4 I4 I4'
     ∇
@@ -204,14 +204,31 @@
     ⍝ In Command mode with a client name, auto-generates a command handle.
     ⍝ data must be a byte vector (⎕DR 83).
       closeFlag←0 ⋄ hdrs←⍬
-      rc outName←2↑conga_send h name data(≢data)hdrs(≢hdrs)closeFlag 0 0 256 256 0
+      rc outName←2↑conga_send h name data(≢data)hdrs(≢hdrs)closeFlag 0 0 0 256 256 0
+      r←rc outName
+    ∇
+
+    ∇ r←SendTracked(h name data);closeFlag;hdrs;rc;outName
+    ⍝ Send data with mailbox tracking (track=1). Race-safe for concurrent Wait patterns.
+    ⍝ The response is routed to a per-command mailbox, preventing broad waiters from
+    ⍝ stealing it. Pair with a specific Wait on the returned handle.
+    ⍝ Returns (rc resolvedHandle).
+      closeFlag←0 ⋄ hdrs←⍬
+      rc outName←2↑conga_send h name data(≢data)hdrs(≢hdrs)closeFlag 0 0 1 256 256 0
       r←rc outName
     ∇
 
     ∇ r←SendEx(h name data hdrs closeFlag compression compressionLevel);rc;outName
     ⍝ Extended send with headers, close flag, and per-message compression settings.
     ⍝ Returns (rc resolvedHandle).
-      rc outName←2↑conga_send h name data(≢data)hdrs(≢hdrs)closeFlag compression compressionLevel 256 256 0
+      rc outName←2↑conga_send h name data(≢data)hdrs(≢hdrs)closeFlag compression compressionLevel 0 256 256 0
+      r←rc outName
+    ∇
+
+    ∇ r←SendExTracked(h name data hdrs closeFlag compression compressionLevel);rc;outName
+    ⍝ Extended send with tracking (track=1). Race-safe for concurrent Wait patterns.
+    ⍝ Returns (rc resolvedHandle).
+      rc outName←2↑conga_send h name data(≢data)hdrs(≢hdrs)closeFlag compression compressionLevel 1 256 256 0
       r←rc outName
     ∇
 

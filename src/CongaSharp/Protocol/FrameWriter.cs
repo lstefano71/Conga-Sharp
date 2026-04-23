@@ -13,7 +13,7 @@ public static class FrameWriter
     public static void WriteFrame(
         Stream stream,
         MsgType msgType,
-        string cmdName,
+        Guid correlationId,
         ReadOnlySpan<byte> payload,
         IReadOnlyDictionary<string, byte[]>? userHeaders = null,
         CompressionAlgorithm compression = CompressionAlgorithm.None,
@@ -37,7 +37,7 @@ public static class FrameWriter
             MsgType = msgType,
             Flags = flags,
             Magic = magic,
-            CmdName = cmdName ?? "",
+            CorrelationId = correlationId,
             HeadersLen = (uint)headersBytes.Length,
             PayloadLen = (uint)compressedPayload.Length,
             UncompressedLen = uncompressedLen,

@@ -74,7 +74,7 @@ Unlike original Conga (written in C++), Conga-Sharp:
 │                          │                                   │
 │  ┌───────────────────────▼───────────────────────────────┐   │
 │  │                Wire Protocol (for framed modes)       │   │
-│  │ 52-byte header │ CRC-32C │ Compression │ User Headers │   │
+│  │ 40-byte header │ CRC-32C │ Compression │ User Headers │   │
 │  └───────────────────────┬───────────────────────────────┘   │
 │                          │                                   │
 │  ┌───────────────────────▼───────────────────────────────┐   │
@@ -245,6 +245,8 @@ When `name` is a base object (e.g. `"C1"`), an auto-generated suffix is appended
 
 In Command mode, server-side connections must use `conga_respond`/`conga_progress` instead — calling `conga_send` from a server connection returns `InvalidMode` (1010).
 
+**Tracked commands (`track=1`):** In Command mode, setting `track=1` creates a per-command mailbox *before* bytes are sent on the wire. The server's response (and any Progress events) are routed to this mailbox rather than the global event queue, preventing a race condition where a broad `conga_wait` on the parent connection could steal the response before the caller's specific `conga_wait` executes. When `track=0` (the default), events go to the global queue as normal — suitable for single-threaded event loops that use broad `Wait` only. The `track` parameter is ignored in non-Command modes.
+
 ```c
 int32_t conga_send(
     uintptr_t  handle,
@@ -256,13 +258,14 @@ int32_t conga_send(
     int32_t    close_flag,     // 0=noop, 1=close conn, 2=close cmd, 3=Sent event
     int32_t    compression,    // 0=None, 1=Deflate, 2=LZ4, 3=Zstd
     int32_t    compression_level,
+    int32_t    track,          // 0=global queue (default), 1=create per-command mailbox
     wchar_t*   out_name,       // output: resolved handle name (caller-allocated)
     int32_t    out_name_cap,   // capacity of out_name in wchar_t units
     int32_t*   out_name_len    // output: actual length in wchar_t units (excl. null)
 );
 ```
 ```apl
-'I4 congasharp|conga_send P <0T <U1[] I4 <U1[] I4 I4 I4 I4 >0T[] I4 >I4'
+'I4 congasharp|conga_send P <0T <U1[] I4 <U1[] I4 I4 I4 I4 I4 >0T[] I4 >I4'
 ```
 
 #### `conga_respond`
@@ -382,7 +385,7 @@ int32_t conga_names(
 
 Conga-Sharp uses its own wire protocol, not compatible with original Conga. Every message on the wire consists of a **fixed header** followed by an optional **variable section**.
 
-### 8.2 Fixed Header (56 bytes)
+### 8.2 Fixed Header (40 bytes)
 
 ```
 Offset  Size  Field            Description
@@ -391,23 +394,28 @@ Offset  Size  Field            Description
  1       1    MsgType          Message type
  2       2    Flags            Bit field (compression, features)
  4       4    Magic            Magic number for stream validation
- 8      32    CmdName          Command name (UTF-8, null-padded, unused if not Command mode)
-40       4    HeadersLen       Length of user headers section in bytes
-44       4    PayloadLen       Length of compressed payload on the wire
-48       4    UncompressedLen  Length of payload after decompression (= PayloadLen when compression is None)
-52       4    HeaderCRC        CRC-32C of bytes 0..51
+ 8      16    CorrelationId    128-bit binary identifier (Guid, little-endian). Used to match
+                               requests with responses in Command mode. Guid.Empty for non-Command modes.
+24       4    HeadersLen       Length of user headers section in bytes
+28       4    PayloadLen       Length of compressed payload on the wire
+32       4    UncompressedLen  Length of payload after decompression (= PayloadLen when compression is None)
+36       4    HeaderCRC        CRC-32C of bytes 0..35
 ```
 
-**Total fixed header: 56 bytes.**
+**Total fixed header: 40 bytes.**
+
+> **Note:** The CorrelationId replaces the former 32-byte UTF-8 `CmdName` field. Command names are
+> now resolved locally via a per-connection bidirectional map in `CommandMode`. This removes the
+> 31-byte name limit and decouples wire correlation from user-visible naming.
 
 ### 8.3 Variable Section
 
 ```
 Offset          Size              Field         Description
 ──────          ────              ──────────    ──────────────────
-56              HeadersLen        UserHeaders   Key-value pairs
-56+HeadersLen   PayloadLen        Payload       Application data (compressed if Flags indicate)
-56+H+P          4                 PayloadCRC    CRC-32C of UserHeaders + Payload
+40              HeadersLen        UserHeaders   Key-value pairs
+40+HeadersLen   PayloadLen        Payload       Application data (compressed if Flags indicate)
+40+H+P          4                 PayloadCRC    CRC-32C of UserHeaders + Payload
 ```
 
 The PayloadCRC field is present only when the `HasPayloadCRC` flag is set.
@@ -421,6 +429,8 @@ The PayloadCRC field is present only when the `HasPayloadCRC` flag is set.
 | 0x03 | Progress | Interim command progress |
 | 0x04 | Control  | Reserved for future control messages |
 
+In Command mode, the `MsgType` + `CorrelationId` together identify a command exchange. The CorrelationId is a randomly generated 128-bit value assigned at send time by the originating side, and used by the receiving side to correlate Respond/Progress messages back to the original request.
+
 ### 8.5 Flags Field (16 bits)
 
 | Bits  | Name           | Description |
@@ -432,8 +442,8 @@ The PayloadCRC field is present only when the `HasPayloadCRC` flag is set.
 
 ### 8.6 CRC Validation Strategy
 
-1. **Read 56 bytes** (fixed header)
-2. **Validate HeaderCRC** (CRC-32C of bytes 0–51) — if invalid, close connection (corrupt stream)
+1. **Read 40 bytes** (fixed header)
+2. **Validate HeaderCRC** (CRC-32C of bytes 0–35) — if invalid, close connection (corrupt stream)
 3. **Check PayloadLen and UncompressedLen** — if either exceeds buffer limits, reject before allocating
 4. **Read variable section** (HeadersLen + PayloadLen + optional 4 bytes CRC)
 5. **Validate PayloadCRC** if HasPayloadCRC flag set (CRC-32C of UserHeaders + compressed Payload)
@@ -489,7 +499,7 @@ These modes use the full wire protocol described in sections 8.2–8.8 (52-byte 
 
 - `SocketPipeline` must support two read strategies: **raw byte stream** (Raw/Text) and **frame-based** (BlkRaw/BlkText/Command).
 - Compression, CRC, user headers, and the Magic number are only relevant to framed modes.
-- `conga_send` in Raw/Text modes ignores the `headers` parameter and `close_flag` values 2 and 3 (Command-mode-specific). Only `close_flag=0` (noop) and `close_flag=1` (close connection) apply.
+- `conga_send` in Raw/Text modes ignores the `headers` parameter, the `track` parameter, and `close_flag` values 2 and 3 (Command-mode-specific). Only `close_flag=0` (noop) and `close_flag=1` (close connection) apply.
 
 ## 9. Event System
 
@@ -513,6 +523,21 @@ These modes use the full wire protocol described in sections 8.2–8.8 (52-byte 
 - `conga_wait` dequeues events, blocking with timeout
 - Wait can target a specific object (filters events) or root (all events)
 - When `conga_shutdown` is called, all pending waits unblock with error code `2002`
+
+#### Command Mode Mailbox Routing
+
+When `conga_send` is called with `track=1` in Command mode, a per-command **mailbox** (`Channel<CongaEvent>`) is registered in the `EventQueue` keyed by the resolved command handle (e.g. `"C1.Auto00000001"`). This prevents the "fast server / slow client" race condition where a response arrives between `conga_send` returning and the caller issuing `conga_wait`.
+
+**Routing rules:**
+- `EventQueue.Enqueue`: if a mailbox exists for `evt.ObjectName`, routes the event there (skips global queue). If the event is terminal (Respond), the mailbox is marked complete.
+- `conga_wait` with an exact command handle (e.g. `"C1.Auto00000001"`): reads from the mailbox if one exists. If the response arrived early, returns immediately.
+- `conga_wait` with a broad filter (e.g. `"C1"` or `"."`): scans the global queue only. Mailboxed events are invisible to broad waiters — this is the core of the race protection.
+- On disconnect or `conga_close`: all mailboxes with a matching prefix receive a `Closed` event and are marked complete.
+- On `conga_shutdown`: all mailboxes receive an `Error` event and are completed.
+
+**When to use `track=1`:** Use when APL spawns concurrent specific waiters alongside a broad catch-all waiter. The caller must pair `track=1` sends with specific `conga_wait` calls on the returned handle.
+
+**When to use `track=0` (default):** Use for single-threaded event loops where all events are consumed by a single broad `conga_wait` on the connection or root. No race condition exists in this pattern.
 
 ## 10. Properties
 

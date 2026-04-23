@@ -199,10 +199,10 @@ public class NetworkingExportsTests : IDisposable
             Assert.Equal(ErrorCodes.Success, rc);
         }
 
-        // Server receives command
+        // Server receives command (server-side name is auto-generated from correlation GUID)
         var (cmdObjName, evtName, _, reqPayload, _, recvRc) = WaitForEvent("S1", 5000);
         Assert.Equal(ErrorCodes.Success, recvRc);
-        Assert.Equal($"{connName}.GetInfo", cmdObjName);
+        Assert.StartsWith($"{connName}.", cmdObjName);
         Assert.Equal("Receive", evtName);
         Assert.Equal("What is your status?",
             System.Text.Encoding.UTF8.GetString(reqPayload));
@@ -545,7 +545,7 @@ public class NetworkingExportsTests : IDisposable
         {
             int rc = NativeApi.Send(
                 _handle, namePtr, dataPtr, data.Length,
-                null, 0, 0, 0, 0, outNamePtr, 3, &outNameLen);
+                null, 0, 0, 0, 0, 0, outNamePtr, 3, &outNameLen);
 
             Assert.Equal(ErrorCodes.BufferTooSmall, rc);
             Assert.Equal("C1.Auto00000000".Length + 1, outNameLen);
@@ -718,7 +718,7 @@ public class NetworkingExportsTests : IDisposable
             int rc = NativeApi.Send(
                 _handle, namePtr, dataPtr, data.Length,
                 hdrPtr, headers?.Length ?? 0, closeFlag,
-                0, 0, outNamePtr, 256, &outNameLen);
+                0, 0, 0, outNamePtr, 256, &outNameLen);
 
             string handle = rc == ErrorCodes.Success
                 ? new string(outNamePtr)

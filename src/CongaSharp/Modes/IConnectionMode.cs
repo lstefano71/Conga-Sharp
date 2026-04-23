@@ -54,6 +54,7 @@ public sealed class FrameData
 {
     public required Protocol.MsgType MsgType { get; init; }
     public required string CmdName { get; init; }
+    public required Guid CorrelationId { get; init; }
     public required byte[] Payload { get; init; }
     public required Dictionary<string, byte[]> UserHeaders { get; init; }
 }
@@ -84,6 +85,11 @@ public sealed class OutboundMessage
     /// For framed modes: the command name (Command mode only).
     /// </summary>
     public string? CmdName { get; init; }
+
+    /// <summary>
+    /// For framed modes: the wire correlation ID (Command mode generates a unique Guid per command).
+    /// </summary>
+    public Guid CorrelationId { get; init; }
 
     /// <summary>
     /// Action to take after successful send.

@@ -110,7 +110,7 @@ public class ModeTests
     {
         var mode = new RawMode();
         Assert.Throws<InvalidOperationException>(() => mode.OnFrameReceived("S1.CON0001",
-            new FrameData { MsgType = MsgType.Data, CmdName = "", Payload = [], UserHeaders = new() }));
+            new FrameData { MsgType = MsgType.Data, CmdName = "", CorrelationId = Guid.Empty, Payload = [], UserHeaders = new() }));
     }
 
     // --- TextMode ---
@@ -212,7 +212,7 @@ public class ModeTests
     public void BlkRawMode_OnFrameReceived_DataProducesBlockEvent()
     {
         var mode = new BlkRawMode();
-        var frame = new FrameData { MsgType = MsgType.Data, CmdName = "", Payload = [1, 2, 3], UserHeaders = new() };
+        var frame = new FrameData { MsgType = MsgType.Data, CmdName = "", CorrelationId = Guid.Empty, Payload = [1, 2, 3], UserHeaders = new() };
         var events = mode.OnFrameReceived("CON", frame);
         Assert.Single(events);
         Assert.Equal(EventType.Block, events[0].Type);
@@ -240,74 +240,204 @@ public class ModeTests
     public void CommandMode_OnFrameReceived_DataCreatesReceive()
     {
         var mode = new CommandMode();
-        var frame = new FrameData { MsgType = MsgType.Data, CmdName = "Echo", Payload = [42], UserHeaders = new() };
+        var corrId = Guid.NewGuid();
+        var frame = new FrameData { MsgType = MsgType.Data, CmdName = "", CorrelationId = corrId, Payload = [42], UserHeaders = new() };
         var events = mode.OnFrameReceived("CON", frame);
 
         Assert.Single(events);
         Assert.Equal(EventType.Receive, events[0].Type);
-        Assert.Equal("CON.Echo", events[0].ObjectName);
+        // CmdName is auto-generated from the Guid's first 8 hex chars
+        Assert.StartsWith("CON.", events[0].ObjectName);
     }
 
     [Fact]
     public void CommandMode_OnFrameReceived_ProgressCreatesProgressEvent()
     {
         var mode = new CommandMode();
-        mode.OnFrameReceived("CON", new FrameData { MsgType = MsgType.Data, CmdName = "Job", Payload = [], UserHeaders = new() });
+        var corrId = Guid.NewGuid();
+        // First send Data to establish the correlation
+        mode.OnFrameReceived("CON", new FrameData { MsgType = MsgType.Data, CmdName = "", CorrelationId = corrId, Payload = [], UserHeaders = new() });
 
-        var frame = new FrameData { MsgType = MsgType.Progress, CmdName = "Job", Payload = [50], UserHeaders = new() };
+        var frame = new FrameData { MsgType = MsgType.Progress, CmdName = "", CorrelationId = corrId, Payload = [50], UserHeaders = new() };
         var events = mode.OnFrameReceived("CON", frame);
 
         Assert.Single(events);
         Assert.Equal(EventType.Progress, events[0].Type);
-        Assert.Equal("CON.Job", events[0].ObjectName);
+        Assert.StartsWith("CON.", events[0].ObjectName);
     }
 
     [Fact]
     public void CommandMode_OnFrameReceived_RespondClosesCommand()
     {
         var mode = new CommandMode();
-        mode.OnFrameReceived("CON", new FrameData { MsgType = MsgType.Data, CmdName = "Echo", Payload = [], UserHeaders = new() });
-        Assert.True(mode.IsCommandActive("CON", "Echo"));
+        var corrId = Guid.NewGuid();
+        var dataEvents = mode.OnFrameReceived("CON", new FrameData { MsgType = MsgType.Data, CmdName = "", CorrelationId = corrId, Payload = [], UserHeaders = new() });
+        // Extract the auto-generated cmdName suffix
+        var cmdName = dataEvents[0].ObjectName.Split('.')[1];
+        Assert.True(mode.IsCommandActive("CON", cmdName));
 
-        var frame = new FrameData { MsgType = MsgType.Respond, CmdName = "Echo", Payload = [99], UserHeaders = new() };
+        var frame = new FrameData { MsgType = MsgType.Respond, CmdName = "", CorrelationId = corrId, Payload = [99], UserHeaders = new() };
         var events = mode.OnFrameReceived("CON", frame);
 
         Assert.Single(events);
         Assert.Equal(EventType.Receive, events[0].Type);
-        Assert.False(mode.IsCommandActive("CON", "Echo"));
+        Assert.False(mode.IsCommandActive("CON", cmdName));
+    }
+
+    [Fact]
+    public void CommandMode_PrepareOutbound_GeneratesCorrelationId()
+    {
+        var mode = new CommandMode();
+        var msg = mode.PrepareOutbound("CON", new byte[] { 1, 2 }, null, PostSendAction.None, "Echo");
+        Assert.Equal(MsgType.Data, msg.MsgType);
+        Assert.Equal("Echo", msg.CmdName);
+        Assert.NotEqual(Guid.Empty, msg.CorrelationId);
     }
 
     [Fact]
     public void CommandMode_PrepareRespond()
     {
         var mode = new CommandMode();
-        var msg = mode.PrepareRespond("CON", new byte[] { 1, 2 }, "Echo");
+        // First receive a command to establish the correlation
+        var corrId = Guid.NewGuid();
+        var dataEvents = mode.OnFrameReceived("CON", new FrameData { MsgType = MsgType.Data, CmdName = "", CorrelationId = corrId, Payload = [], UserHeaders = new() });
+        var cmdName = dataEvents[0].ObjectName.Split('.')[1];
+
+        var msg = mode.TryPrepareRespond("CON", new byte[] { 1, 2 }, cmdName);
+        Assert.NotNull(msg);
         Assert.Equal(MsgType.Respond, msg.MsgType);
-        Assert.Equal("Echo", msg.CmdName);
+        Assert.Equal(cmdName, msg.CmdName);
         Assert.Equal(PostSendAction.CloseCommand, msg.PostAction);
+        Assert.Equal(corrId, msg.CorrelationId);
     }
 
     [Fact]
     public void CommandMode_PrepareProgress()
     {
         var mode = new CommandMode();
-        var msg = mode.PrepareProgress("CON", new byte[] { 50 }, "Job");
+        // First receive a command to establish the correlation
+        var corrId = Guid.NewGuid();
+        var dataEvents = mode.OnFrameReceived("CON", new FrameData { MsgType = MsgType.Data, CmdName = "", CorrelationId = corrId, Payload = [], UserHeaders = new() });
+        var cmdName = dataEvents[0].ObjectName.Split('.')[1];
+
+        var msg = mode.TryPrepareProgress("CON", new byte[] { 50 }, cmdName);
+        Assert.NotNull(msg);
         Assert.Equal(MsgType.Progress, msg.MsgType);
-        Assert.Equal("Job", msg.CmdName);
+        Assert.Equal(cmdName, msg.CmdName);
         Assert.Equal(PostSendAction.None, msg.PostAction);
+        Assert.Equal(corrId, msg.CorrelationId);
     }
 
     [Fact]
     public void CommandMode_OnDisconnected_ClosesAllCommands()
     {
         var mode = new CommandMode();
-        mode.OnFrameReceived("CON", new FrameData { MsgType = MsgType.Data, CmdName = "A", Payload = [], UserHeaders = new() });
-        mode.OnFrameReceived("CON", new FrameData { MsgType = MsgType.Data, CmdName = "B", Payload = [], UserHeaders = new() });
+        var corrA = Guid.NewGuid();
+        var corrB = Guid.NewGuid();
+        mode.OnFrameReceived("CON", new FrameData { MsgType = MsgType.Data, CmdName = "", CorrelationId = corrA, Payload = [], UserHeaders = new() });
+        mode.OnFrameReceived("CON", new FrameData { MsgType = MsgType.Data, CmdName = "", CorrelationId = corrB, Payload = [], UserHeaders = new() });
 
         var events = mode.OnDisconnected("CON");
 
         // Should have Closed events for each command + the connection itself
         Assert.Equal(3, events.Count);
         Assert.All(events, e => Assert.Equal(EventType.Closed, e.Type));
+    }
+
+    [Fact]
+    public void CommandMode_ReceiverNames_AreValidAplNames()
+    {
+        var mode = new CommandMode();
+        // Simulate receiving several commands
+        for (int i = 0; i < 20; i++)
+        {
+            var corrId = Guid.NewGuid();
+            var events = mode.OnFrameReceived("CON", new FrameData
+            {
+                MsgType = MsgType.Data, CmdName = "", CorrelationId = corrId,
+                Payload = [], UserHeaders = new()
+            });
+            var name = events[0].ObjectName;
+            var suffix = name[(name.LastIndexOf('.') + 1)..];
+            // Must start with a letter (valid APL variable name)
+            Assert.Matches(@"^[A-Za-z]", suffix);
+            // Must match the Cmd######## pattern
+            Assert.Matches(@"^Cmd\d{8}$", suffix);
+        }
+    }
+
+    [Fact]
+    public void CommandMode_DoubleRespond_ReturnsNull()
+    {
+        var mode = new CommandMode();
+        var corrId = Guid.NewGuid();
+        mode.OnFrameReceived("CON", new FrameData
+        {
+            MsgType = MsgType.Data, CmdName = "", CorrelationId = corrId,
+            Payload = [], UserHeaders = new()
+        });
+        var cmdName = "Cmd00000000";
+
+        // First respond should succeed
+        var msg1 = mode.TryPrepareRespond("CON", new byte[] { 1 }, cmdName);
+        Assert.NotNull(msg1);
+        Assert.Equal(corrId, msg1.CorrelationId);
+
+        // Second respond to same command should return null
+        var msg2 = mode.TryPrepareRespond("CON", new byte[] { 2 }, cmdName);
+        Assert.Null(msg2);
+    }
+
+    [Fact]
+    public void CommandMode_ProgressAfterRespond_ReturnsNull()
+    {
+        var mode = new CommandMode();
+        var corrId = Guid.NewGuid();
+        mode.OnFrameReceived("CON", new FrameData
+        {
+            MsgType = MsgType.Data, CmdName = "", CorrelationId = corrId,
+            Payload = [], UserHeaders = new()
+        });
+        var cmdName = "Cmd00000000";
+
+        // Respond first
+        var respond = mode.TryPrepareRespond("CON", new byte[] { 1 }, cmdName);
+        Assert.NotNull(respond);
+
+        // Progress after respond should return null
+        var progress = mode.TryPrepareProgress("CON", new byte[] { 2 }, cmdName);
+        Assert.Null(progress);
+    }
+
+    [Fact]
+    public void CommandMode_NoNamespaceCollision_AutoAndCmd()
+    {
+        var mode = new CommandMode();
+        // Client-side: send with an "Auto00000000" command name (simulating ObjectRegistry auto-names)
+        var outMsg = mode.PrepareOutbound("CON", new byte[] { 1 }, null, PostSendAction.None, "Auto00000000");
+        Assert.NotEqual(Guid.Empty, outMsg.CorrelationId);
+
+        // Server-side: receive a different command — should get Cmd00000000, not Auto00000000
+        var corrId = Guid.NewGuid();
+        var events = mode.OnFrameReceived("CON", new FrameData
+        {
+            MsgType = MsgType.Data, CmdName = "", CorrelationId = corrId,
+            Payload = [], UserHeaders = new()
+        });
+        var recvName = events[0].ObjectName;
+        Assert.EndsWith(".Cmd00000000", recvName);
+
+        // The received command is tracked as active
+        Assert.True(mode.IsCommandActive("CON", "Cmd00000000"));
+
+        // Responding to the outbound "Auto00000000" should work (correlation exists)
+        var respondMsg = mode.TryPrepareRespond("CON", new byte[] { 2 }, "Auto00000000");
+        Assert.NotNull(respondMsg);
+        Assert.Equal(outMsg.CorrelationId, respondMsg.CorrelationId);
+
+        // Responding to the received "Cmd00000000" should also work
+        var respond2 = mode.TryPrepareRespond("CON", new byte[] { 3 }, "Cmd00000000");
+        Assert.NotNull(respond2);
+        Assert.Equal(corrId, respond2.CorrelationId);
     }
 }

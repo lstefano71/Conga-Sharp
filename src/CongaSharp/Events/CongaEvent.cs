@@ -12,6 +12,12 @@ public sealed class CongaEvent
     public byte[] UserHeaders { get; init; } = Array.Empty<byte>();
     public DateTime Timestamp { get; init; } = DateTime.UtcNow;
 
+    /// <summary>
+    /// True if this event terminates a command lifecycle (e.g., Respond frame).
+    /// Used by EventQueue to mark the command's mailbox as complete.
+    /// </summary>
+    public bool IsTerminal { get; init; }
+
     private static readonly string[] EventTypeNames = Enum.GetValues<EventType>()
         .OrderBy(e => (int)e)
         .Select(e => e.ToString())

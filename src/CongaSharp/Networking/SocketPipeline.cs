@@ -73,7 +73,7 @@ public sealed class SocketPipeline : IAsyncDisposable
                 await AsyncFrameIO.WriteFrameAsync(
                     _stream,
                     msg.MsgType,
-                    msg.CmdName ?? "",
+                    msg.CorrelationId,
                     msg.Payload,
                     userHeaders,
                     msg.Compression,
@@ -183,7 +183,8 @@ public sealed class SocketPipeline : IAsyncDisposable
                 var frameData = new FrameData
                 {
                     MsgType = result.Header.MsgType,
-                    CmdName = result.Header.CmdName,
+                    CmdName = "", // resolved by the mode from its correlation map
+                    CorrelationId = result.Header.CorrelationId,
                     Payload = result.Payload,
                     UserHeaders = result.UserHeaders ?? new Dictionary<string, byte[]>()
                 };
