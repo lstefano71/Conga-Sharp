@@ -2,6 +2,28 @@
 
 ## Unreleased
 
+### Fix: Use-after-return during decompression in `DecompressPooled`
+
+**Issue:** `Compression.DecompressPooled` called `sourceOwner?.Dispose()` before `Decompress(algo, data)`. Since `data` is a `ReadOnlySpan<byte>` over the pooled buffer owned by `sourceOwner`, the array was returned to `ArrayPool<byte>.Shared` while decompression was still reading from it — causing nondeterministic payload corruption.
+
+**Resolution:** Moved `sourceOwner?.Dispose()` to after `Decompress()` completes.
+
+**Affected files:**
+- `src/CongaSharp/Protocol/Compression.cs`
+
+### Fix: Dangling pooled user-header memory in framed read path
+
+**Issue:** `FrameData` had no `RawUserHeadersOwner`, so `SocketPipeline.FramedReadLoopAsync` could not transfer header buffer ownership from `FrameReadResult` to downstream consumers. When `result.Dispose()` was called, the pooled header buffer was returned while modes (CommandMode, BlkRawMode, BlkTextMode) still referenced that memory in events — causing nondeterministic corruption of user headers.
+
+**Resolution:** Added `RawUserHeadersOwner` + `TakeRawUserHeadersOwner()` to `FrameData` and wired the ownership chain: `FrameReadResult` → `FrameData` → `CongaEvent.UserHeadersOwner`.
+
+**Affected files:**
+- `src/CongaSharp/Modes/IConnectionMode.cs` — added `RawUserHeadersOwner` field to `FrameData`
+- `src/CongaSharp/Networking/SocketPipeline.cs` — takes header owner from result, passes to `FrameData`
+- `src/CongaSharp/Modes/CommandMode.cs` — transfers header owner to `CongaEvent`
+- `src/CongaSharp/Modes/BlkRawMode.cs` — transfers header owner to `CongaEvent`
+- `src/CongaSharp/Modes/BlkTextMode.cs` — transfers header owner to `CongaEvent`
+
 ### Fix: Tracked mailbox re-enqueue no longer loses events after terminal response
 
 **Issue:** In tracked Command mode, if a terminal response had already completed the mailbox writer and `conga_wait` then had to re-enqueue an earlier event (for example, object/event output buffer too small), `ReEnqueue` attempted `ChannelWriter.TryWrite` on a completed channel. The write failed and the event was silently dropped.

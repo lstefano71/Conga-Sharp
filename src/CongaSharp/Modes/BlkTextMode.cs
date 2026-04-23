@@ -24,7 +24,8 @@ public sealed class BlkTextMode : IConnectionMode
             Type = eventType,
             Payload = frame.Payload,
             PayloadOwner = frame.TakePayloadOwner(),
-            UserHeaders = frame.RawUserHeaders
+            UserHeaders = frame.RawUserHeaders,
+            UserHeadersOwner = frame.TakeRawUserHeadersOwner()
         }];
   }
 

@@ -161,10 +161,10 @@ public sealed class SocketPipeline : IAsyncDisposable
           CorrelationId = result.Header.CorrelationId,
           Payload = result.Payload,
           PayloadOwner = result.TakePayloadOwner(),
-          RawUserHeaders = result.RawUserHeaders
+          RawUserHeaders = result.RawUserHeaders,
+          RawUserHeadersOwner = result.TakeRawUserHeadersOwner()
         };
-        // RawUserHeaders owner not tracked separately — small buffer, not pooled yet.
-        // Dispose the (now empty) result shell.
+        // Dispose the (now empty) result shell — all owners have been transferred.
         result.Dispose();
 
         var events = _mode.OnFrameReceived(_connectionName, frameData);

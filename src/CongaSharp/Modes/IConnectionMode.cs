@@ -69,8 +69,22 @@ public sealed class FrameData
   }
   private IDisposable? _payloadOwner;
 
+  /// <summary>
+  /// Optional owner for the RawUserHeaders buffer.
+  /// Use <see cref="TakeRawUserHeadersOwner"/> for move-only transfer.
+  /// </summary>
+  internal IDisposable? RawUserHeadersOwner
+  {
+    get => _rawUserHeadersOwner;
+    init => _rawUserHeadersOwner = value;
+  }
+  private IDisposable? _rawUserHeadersOwner;
+
   internal IDisposable? TakePayloadOwner()
       => Interlocked.Exchange(ref _payloadOwner, null);
+
+  internal IDisposable? TakeRawUserHeadersOwner()
+      => Interlocked.Exchange(ref _rawUserHeadersOwner, null);
 }
 
 /// <summary>

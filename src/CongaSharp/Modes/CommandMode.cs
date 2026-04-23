@@ -45,7 +45,8 @@ public sealed class CommandMode : IConnectionMode
             Type = EventType.Receive,
             Payload = frame.Payload,
             PayloadOwner = frame.TakePayloadOwner(),
-            UserHeaders = frame.RawUserHeaders
+            UserHeaders = frame.RawUserHeaders,
+            UserHeadersOwner = frame.TakeRawUserHeadersOwner()
           });
           break;
         }
@@ -59,7 +60,8 @@ public sealed class CommandMode : IConnectionMode
             Type = EventType.Progress,
             Payload = frame.Payload,
             PayloadOwner = frame.TakePayloadOwner(),
-            UserHeaders = frame.RawUserHeaders
+            UserHeaders = frame.RawUserHeaders,
+            UserHeadersOwner = frame.TakeRawUserHeadersOwner()
           });
           break;
         }
@@ -74,6 +76,7 @@ public sealed class CommandMode : IConnectionMode
             Payload = frame.Payload,
             PayloadOwner = frame.TakePayloadOwner(),
             UserHeaders = frame.RawUserHeaders,
+            UserHeadersOwner = frame.TakeRawUserHeadersOwner(),
             IsTerminal = true
           });
           UntrackCommand(connectionName, cmdName);

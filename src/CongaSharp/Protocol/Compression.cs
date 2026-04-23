@@ -127,9 +127,10 @@ public static class Compression
     }
 
     // Decompress via existing path (library allocates internally),
-    // then copy into a pooled buffer
-    sourceOwner?.Dispose();
+    // then copy into a pooled buffer.
+    // NOTE: Dispose sourceOwner AFTER Decompress — data may be a span over its buffer.
     var decompressed = Decompress(algo, data);
+    sourceOwner?.Dispose();
     var pooled = PooledByteBuffer.Rent(decompressed.Length);
     decompressed.CopyTo(pooled.Memory.Span);
     return pooled;
