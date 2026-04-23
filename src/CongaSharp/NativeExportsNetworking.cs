@@ -312,7 +312,7 @@ public static partial class NativeExports
         msg.Compression = (Protocol.CompressionAlgorithm)compression;
         msg.CompressionLevel = compressionLevel;
 
-        pipeline.SendAsync(msg).GetAwaiter().GetResult();
+        pipeline.SendSync(msg);
 
         HandlePostAction(root, resolvedHandle, connName, msg.PostAction);
       } catch {
@@ -375,7 +375,7 @@ public static partial class NativeExports
         if (msg == null) return ErrorCodes.InvalidName;
         msg.Compression = (Protocol.CompressionAlgorithm)compression;
         msg.CompressionLevel = compressionLevel;
-        pipeline.SendAsync(msg).GetAwaiter().GetResult();
+        pipeline.SendSync(msg);
       } finally {
         if (rentedPayload != null)
           ArrayPool<byte>.Shared.Return(rentedPayload);
@@ -428,7 +428,7 @@ public static partial class NativeExports
         if (msg == null) return ErrorCodes.InvalidName;
         msg.Compression = (Protocol.CompressionAlgorithm)compression;
         msg.CompressionLevel = compressionLevel;
-        pipeline.SendAsync(msg).GetAwaiter().GetResult();
+        pipeline.SendSync(msg);
       } finally {
         if (rentedPayload != null)
           ArrayPool<byte>.Shared.Return(rentedPayload);

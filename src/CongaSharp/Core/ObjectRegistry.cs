@@ -14,6 +14,9 @@ public sealed class ObjectRegistry
   private readonly ConcurrentDictionary<string, int> _nextConnection = new(StringComparer.OrdinalIgnoreCase);
   private readonly ConcurrentDictionary<string, int> _nextAuto = new(StringComparer.OrdinalIgnoreCase);
 
+  // Preallocated static delegate to avoid per-call closure allocation in AddOrUpdate
+  private static readonly Func<string, int, int> IncrementValue = static (_, old) => old + 1;
+
   public string GenerateServerName()
   {
     var n = Interlocked.Increment(ref _nextServer);
@@ -28,8 +31,13 @@ public sealed class ObjectRegistry
 
   public string GenerateConnectionName(string parentName)
   {
-    var n = _nextConnection.AddOrUpdate(parentName, 1, (_, old) => old + 1);
-    return $"{parentName}.CON{n:D4}";
+    var n = _nextConnection.AddOrUpdate(parentName, 1, IncrementValue);
+    return string.Create(parentName.Length + 8, (parentName, n), static (span, state) => {
+      state.parentName.AsSpan().CopyTo(span);
+      span[state.parentName.Length] = '.';
+      "CON".AsSpan().CopyTo(span[(state.parentName.Length + 1)..]);
+      state.n.TryFormat(span[(state.parentName.Length + 4)..], out _, "D4");
+    });
   }
 
   /// <summary>
@@ -39,8 +47,13 @@ public sealed class ObjectRegistry
   /// </summary>
   public string GenerateAutoName(string parentName)
   {
-    var n = _nextAuto.AddOrUpdate(parentName, 0, (_, old) => old + 1);
-    return $"{parentName}.Auto{n:D8}";
+    var n = _nextAuto.AddOrUpdate(parentName, 0, IncrementValue);
+    return string.Create(parentName.Length + 13, (parentName, n), static (span, state) => {
+      state.parentName.AsSpan().CopyTo(span);
+      span[state.parentName.Length] = '.';
+      "Auto".AsSpan().CopyTo(span[(state.parentName.Length + 1)..]);
+      state.n.TryFormat(span[(state.parentName.Length + 5)..], out _, "D8");
+    });
   }
 
   public bool TryAdd(CongaObject obj)

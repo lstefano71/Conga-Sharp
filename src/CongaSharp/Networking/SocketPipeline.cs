@@ -59,29 +59,56 @@ public sealed class SocketPipeline : IAsyncDisposable
   /// <summary>
   /// Sends data on this connection. Thread-safe via write lock.
   /// For unframed modes, writes raw bytes. For framed modes, writes a wire frame.
+  /// Synchronous path — avoids async state machine allocations.
+  /// </summary>
+  public void SendSync(OutboundMessage msg)
+  {
+    _writeLock.Wait(_cts.Token);
+    try {
+      if (_mode.UsesFraming) {
+        byte[]? rawHeaders = msg.UserHeaders;
+
+        AsyncFrameIO.WriteFrameSync(
+            _stream,
+            msg.MsgType,
+            msg.CorrelationId,
+            msg.Payload,
+            rawHeaders,
+            msg.Compression,
+            msg.CompressionLevel,
+            0,
+            _cts.Token);
+      } else {
+        _stream.Write(msg.Payload.Span);
+      }
+    } finally {
+      _writeLock.Release();
+    }
+  }
+
+  /// <summary>
+  /// Sends data on this connection. Thread-safe via write lock.
+  /// For unframed modes, writes raw bytes. For framed modes, writes a wire frame.
   /// </summary>
   public async Task SendAsync(OutboundMessage msg)
   {
     await _writeLock.WaitAsync(_cts.Token).ConfigureAwait(false);
     try {
       if (_mode.UsesFraming) {
-        var userHeaders = msg.UserHeaders != null && msg.UserHeaders.Length > 0
-            ? UserHeaders.Decode(msg.UserHeaders)
-            : null;
+        byte[]? rawHeaders = msg.UserHeaders;
 
         await AsyncFrameIO.WriteFrameAsync(
             _stream,
             msg.MsgType,
             msg.CorrelationId,
             msg.Payload,
-            userHeaders,
+            rawHeaders,
             msg.Compression,
             msg.CompressionLevel,
             0,
             _cts.Token).ConfigureAwait(false);
       } else {
         await _stream.WriteAsync(msg.Payload, _cts.Token).ConfigureAwait(false);
-        await _stream.FlushAsync(_cts.Token).ConfigureAwait(false);
       }
     } finally {
       _writeLock.Release();

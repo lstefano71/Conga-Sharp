@@ -128,6 +128,12 @@ public sealed class ServerObject : CongaObject, IAsyncDisposable
         }
 
         try {
+          // Apply TCPNoDelay (Nagle) setting from server properties
+          bool noDelay = true;
+          if (Properties.Get("TCPNoDelay", out var noDelayJson) == ErrorCodes.Success)
+            noDelay = noDelayJson != "0";
+          clientSocket.NoDelay = noDelay;
+
           // Create connection object
           var connName = root.Registry.GenerateConnectionName(Name);
           var conn = new ConnectionObject(connName, this);

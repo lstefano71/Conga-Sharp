@@ -37,6 +37,7 @@ public sealed class CommandMailbox : IDisposable
   /// <summary>
   /// Blocks until an event is available or timeout expires.
   /// Returns null on timeout or cancellation.
+  /// Optimised to avoid CancellationTokenSource and Task allocations on the fast path.
   /// </summary>
   public CongaEvent? TryReceive(int timeoutMs, CancellationToken cancellationToken = default)
   {
@@ -44,14 +45,44 @@ public sealed class CommandMailbox : IDisposable
     if (_requeued.TryDequeue(out var requeued))
       return requeued;
 
-    using var timeoutCts = new CancellationTokenSource(timeoutMs);
-    using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(
-        timeoutCts.Token, cancellationToken);
+    // Fast path: event already in the channel — zero allocations
+    if (_channel.Reader.TryRead(out var immediate))
+      return immediate;
 
+    // Slow path: must wait for an event to arrive
     try {
-      // Synchronously block on the async read — matches the sync C API contract
-      var task = _channel.Reader.ReadAsync(linkedCts.Token).AsTask();
-      return task.GetAwaiter().GetResult();
+      using var timeoutCts = new CancellationTokenSource(timeoutMs);
+      using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(
+          timeoutCts.Token, cancellationToken);
+
+      // Spin briefly on TryRead before falling back to async wait
+      var token = linkedCts.Token;
+      var sw = System.Diagnostics.Stopwatch.StartNew();
+      while (sw.ElapsedMilliseconds < timeoutMs) {
+        if (_channel.Reader.TryRead(out var evt))
+          return evt;
+        if (token.IsCancellationRequested)
+          return null;
+
+        // Wait for data using WaitToReadAsync — avoids .AsTask() on the common path
+        var waitTask = _channel.Reader.WaitToReadAsync(token);
+        if (waitTask.IsCompletedSuccessfully) {
+          if (waitTask.Result && _channel.Reader.TryRead(out evt))
+            return evt;
+          return null; // channel completed with no data
+        }
+
+        // Must block — convert to Task only here (rare: event hasn't arrived yet)
+        try {
+          if (!waitTask.AsTask().GetAwaiter().GetResult())
+            return null; // channel completed
+          if (_channel.Reader.TryRead(out evt))
+            return evt;
+        } catch (OperationCanceledException) {
+          return null;
+        }
+      }
+      return null;
     } catch (OperationCanceledException) {
       return null;
     } catch (ChannelClosedException) {

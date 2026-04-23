@@ -127,13 +127,14 @@ public static class AsyncFrameIO
 
   /// <summary>
   /// Writes a complete wire protocol frame asynchronously.
+  /// Accepts pre-encoded user headers as raw bytes to avoid decode/encode round-trips.
   /// </summary>
   public static async Task WriteFrameAsync(
       Stream stream,
       MsgType msgType,
       Guid correlationId,
       ReadOnlyMemory<byte> payload,
-      Dictionary<string, byte[]>? userHeaders,
+      byte[]? rawUserHeaders,
       CompressionAlgorithm compression,
       int compressionLevel,
       uint magic,
@@ -142,9 +143,7 @@ public static class AsyncFrameIO
     var uncompressedLen = (uint)payload.Length;
     var compressedPayload = Compression.Compress(compression, payload, compressionLevel);
 
-    var headersBytes = (userHeaders != null && userHeaders.Count > 0)
-        ? UserHeaders.Encode(userHeaders)
-        : Array.Empty<byte>();
+    var headersBytes = rawUserHeaders ?? Array.Empty<byte>();
 
     bool hasHeaders = headersBytes.Length > 0;
     bool includePayloadCrc = true;
@@ -169,39 +168,105 @@ public static class AsyncFrameIO
     var pool = ArrayPool<byte>.Shared;
     var frameBuf = pool.Rent(totalSize);
     try {
-      var span = frameBuf.AsSpan();
-
-      // Write header (52 bytes)
-      header.WriteTo(span[..FrameHeader.Size]);
-      var headerCrc = Crc32C.ComputeHeaderCrc(span[..FrameHeader.CrcOffset]);
-      BinaryPrimitives.WriteUInt32LittleEndian(span.Slice(FrameHeader.CrcOffset, 4), headerCrc);
-
-      int offset = FrameHeader.Size;
-
-      // Write user headers
-      if (headersBytes.Length > 0) {
-        headersBytes.CopyTo(span[offset..]);
-        offset += headersBytes.Length;
-      }
-
-      // Write compressed payload
-      if (compressedPayload.Length > 0) {
-        compressedPayload.Span.CopyTo(span[offset..]);
-        offset += compressedPayload.Length;
-      }
-
-      // Write payload CRC
-      if (includePayloadCrc) {
-        var payloadCrc = Crc32C.ComputePayloadCrc(headersBytes, compressedPayload.Span);
-        BinaryPrimitives.WriteUInt32LittleEndian(span.Slice(offset, 4), payloadCrc);
-        offset += 4;
-      }
+      AssembleFrame(frameBuf, header, headersBytes, compressedPayload.Span, includePayloadCrc, totalSize);
 
       // Single write for the entire frame
       await stream.WriteAsync(frameBuf.AsMemory(0, totalSize), ct).ConfigureAwait(false);
-      await stream.FlushAsync(ct).ConfigureAwait(false);
     } finally {
       pool.Return(frameBuf);
+    }
+  }
+
+  /// <summary>
+  /// Writes a complete wire protocol frame synchronously.
+  /// Avoids async state machine allocations — preferred for the C ABI send path.
+  /// </summary>
+  public static void WriteFrameSync(
+      Stream stream,
+      MsgType msgType,
+      Guid correlationId,
+      ReadOnlyMemory<byte> payload,
+      byte[]? rawUserHeaders,
+      CompressionAlgorithm compression,
+      int compressionLevel,
+      uint magic,
+      CancellationToken ct)
+  {
+    ct.ThrowIfCancellationRequested();
+
+    var uncompressedLen = (uint)payload.Length;
+    var compressedPayload = Compression.Compress(compression, payload, compressionLevel);
+
+    var headersBytes = rawUserHeaders ?? Array.Empty<byte>();
+
+    bool hasHeaders = headersBytes.Length > 0;
+    bool includePayloadCrc = true;
+    var flags = FrameFlags.Create(compression, hasHeaders, includePayloadCrc);
+
+    var header = new FrameHeader {
+      Version = FrameHeader.CurrentVersion,
+      MsgType = msgType,
+      Flags = flags,
+      Magic = magic,
+      CorrelationId = correlationId,
+      HeadersLen = (uint)headersBytes.Length,
+      PayloadLen = (uint)compressedPayload.Length,
+      UncompressedLen = uncompressedLen,
+      HeaderCrc = 0
+    };
+
+    int crcSize = includePayloadCrc ? 4 : 0;
+    int totalSize = FrameHeader.Size + headersBytes.Length + compressedPayload.Length + crcSize;
+
+    var pool = ArrayPool<byte>.Shared;
+    var frameBuf = pool.Rent(totalSize);
+    try {
+      AssembleFrame(frameBuf, header, headersBytes, compressedPayload.Span, includePayloadCrc, totalSize);
+
+      // Single synchronous write
+      stream.Write(frameBuf, 0, totalSize);
+    } finally {
+      pool.Return(frameBuf);
+    }
+  }
+
+  /// <summary>
+  /// Assembles header + user headers + payload + CRC into a pre-allocated frame buffer.
+  /// Shared by both async and sync write paths.
+  /// </summary>
+  private static void AssembleFrame(
+      byte[] frameBuf,
+      FrameHeader header,
+      byte[] headersBytes,
+      ReadOnlySpan<byte> compressedPayload,
+      bool includePayloadCrc,
+      int totalSize)
+  {
+    var span = frameBuf.AsSpan();
+
+    // Write header
+    header.WriteTo(span[..FrameHeader.Size]);
+    var headerCrc = Crc32C.ComputeHeaderCrc(span[..FrameHeader.CrcOffset]);
+    BinaryPrimitives.WriteUInt32LittleEndian(span.Slice(FrameHeader.CrcOffset, 4), headerCrc);
+
+    int offset = FrameHeader.Size;
+
+    // Write user headers
+    if (headersBytes.Length > 0) {
+      headersBytes.CopyTo(span[offset..]);
+      offset += headersBytes.Length;
+    }
+
+    // Write compressed payload
+    if (compressedPayload.Length > 0) {
+      compressedPayload.CopyTo(span[offset..]);
+      offset += compressedPayload.Length;
+    }
+
+    // Write payload CRC
+    if (includePayloadCrc) {
+      var payloadCrc = Crc32C.ComputePayloadCrc(headersBytes, compressedPayload);
+      BinaryPrimitives.WriteUInt32LittleEndian(span.Slice(offset, 4), payloadCrc);
     }
   }
 

@@ -54,6 +54,12 @@ public sealed class ClientObject : CongaObject, IAsyncDisposable
 
       socket = new Socket(ipAddress.AddressFamily, SocketType.Stream, ProtocolType.Tcp);
 
+      // Apply TCPNoDelay (Nagle) setting — default is enabled for low latency
+      bool noDelay = true;
+      if (Properties.Get("TCPNoDelay", out var noDelayJson) == ErrorCodes.Success)
+        noDelay = noDelayJson != "0";
+      socket.NoDelay = noDelay;
+
       using var timeoutCts = new CancellationTokenSource(timeoutMs);
       using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(
           timeoutCts.Token, root.ShutdownToken);

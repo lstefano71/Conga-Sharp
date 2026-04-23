@@ -24,6 +24,7 @@ public static class PropertyDefinitions
     Register("Trace", "0", false, ObjectType.Root);
     Register("TraceFile", "\"\"", false, ObjectType.Root);
     Register("TCPLookup", "\"auto\"", false, ObjectType.Server, ObjectType.Client);
+    Register("TCPNoDelay", "1", false, ObjectType.Server, ObjectType.Client);
 
     // Read-only properties
     Register("LocalAddr", "null", true, ObjectType.Server, ObjectType.Client, ObjectType.Connection);

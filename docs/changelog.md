@@ -2,6 +2,38 @@
 
 ## Unreleased
 
+### Performance: TCP_NODELAY, sync send path, reduced allocations
+
+**Issue:** Echo client loop measured 0.8ms per round-trip vs 0.5ms for original Conga — 60% overhead. Root causes: Nagle's algorithm enabled by default, async state machine overhead on the synchronous C ABI send path, per-call heap allocations in the mailbox wait mechanism, closure allocations in counter updates, and a redundant UserHeaders decode/encode round-trip.
+
+**Resolution:** Six optimisations applied:
+
+1. **TCP_NODELAY enabled by default** — new `TCPNoDelay` property (default `1`) on Server/Client objects. Set via `conga_setprop` before start. Eliminates Nagle-induced latency on request-response patterns.
+2. **Synchronous send path** — `SocketPipeline.SendSync()` and `AsyncFrameIO.WriteFrameSync()` avoid async state machine boxing. `conga_send`, `conga_respond`, `conga_progress` now use the sync path.
+3. **CommandMailbox fast path** — `TryReceive()` now does `TryRead()` first (zero allocations when event is ready). Falls back to `WaitToReadAsync` + `TryRead` only when empty, avoiding unconditional `.AsTask()` allocation.
+4. **Eliminated closure allocations** — `AddOrUpdate` calls in `ObjectRegistry` and `CommandMode` now use a static delegate `(_, old) => old + 1` instead of per-call lambdas. Auto-name generation uses `string.Create` instead of string interpolation.
+5. **Eliminated UserHeaders decode/encode round-trip** — `WriteFrameAsync`/`WriteFrameSync` now accept pre-encoded `byte[]?` directly, removing the unnecessary `Decode` in `SendAsync` followed by `Encode` in `WriteFrameAsync`.
+6. **Removed redundant FlushAsync** — `stream.FlushAsync()` after every frame write removed (NoDelay makes it a no-op; when Nagle is on, the OS handles buffering).
+7. **NativeAOT speed flag** — `<IlcOptimizationPreference>Speed</IlcOptimizationPreference>` added to csproj.
+
+**New property:**
+| Property | Type | Default | Applies to | Description |
+|----------|------|---------|------------|-------------|
+| TCPNoDelay | int | 1 | Server, Client | 1=disable Nagle (low latency), 0=enable Nagle (bulk throughput) |
+
+**Affected files:**
+- `src/CongaSharp/Properties/PropertyDefinitions.cs` — added `TCPNoDelay` property
+- `src/CongaSharp/Core/ClientObject.cs` — reads `TCPNoDelay` property, sets `socket.NoDelay`
+- `src/CongaSharp/Core/ServerObject.cs` — reads `TCPNoDelay` property, sets `socket.NoDelay` on accepted connections
+- `src/CongaSharp/Networking/SocketPipeline.cs` — added `SendSync()`, removed FlushAsync from `SendAsync`
+- `src/CongaSharp/Networking/AsyncFrameIO.cs` — added `WriteFrameSync()`, changed `WriteFrameAsync` to accept `byte[]?` raw headers, extracted shared `AssembleFrame()`, removed FlushAsync
+- `src/CongaSharp/NativeExportsNetworking.cs` — `conga_send`/`conga_respond`/`conga_progress` now call `SendSync`
+- `src/CongaSharp/Events/CommandMailbox.cs` — `TryReceive` rewritten with TryRead fast path
+- `src/CongaSharp/Modes/CommandMode.cs` — static delegate, `string.Create`, collection expression returns
+- `src/CongaSharp/Core/ObjectRegistry.cs` — static delegate, `string.Create` for name generation
+- `src/CongaSharp/CongaSharp.csproj` — `IlcOptimizationPreference=Speed`
+- `docs/PRD.md` — added `TCPNoDelay` property to §10 table
+
 ### Fix: Use-after-return during decompression in `DecompressPooled`
 
 **Issue:** `Compression.DecompressPooled` called `sourceOwner?.Dispose()` before `Decompress(algo, data)`. Since `data` is a `ReadOnlySpan<byte>` over the pooled buffer owned by `sourceOwner`, the array was returned to `ArrayPool<byte>.Shared` while decompression was still reading from it — causing nondeterministic payload corruption.

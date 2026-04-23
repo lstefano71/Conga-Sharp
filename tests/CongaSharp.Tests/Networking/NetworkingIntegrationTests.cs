@@ -477,10 +477,11 @@ public class NetworkingIntegrationTests : IAsyncLifetime
     var userHeaders = new Dictionary<string, byte[]> {
       ["key1"] = "value1"u8.ToArray()
     };
+    var encodedHeaders = UserHeaders.Encode(userHeaders);
 
     var corrId = Guid.NewGuid();
     await AsyncFrameIO.WriteFrameAsync(
-        stream, MsgType.Data, corrId, payload, userHeaders,
+        stream, MsgType.Data, corrId, payload, encodedHeaders,
         CompressionAlgorithm.None, 0, 0, CancellationToken.None);
 
     stream.Position = 0;

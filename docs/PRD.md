@@ -561,6 +561,7 @@ When `conga_send` is called with `track=1` in Command mode, a per-command **mail
 | TraceFile | string | "" | Path to trace log file |
 | LocalPort | int | — | Actual bound port (read-only, useful for ephemeral) |
 | TCPLookup | string | "auto" | DNS lookup behavior |
+| TCPNoDelay | int | 1 | 1=disable Nagle's algorithm (low latency), 0=enable Nagle (higher throughput) |
 
 ### 10.2 JSON Encoding for SetProp/GetProp
 

@@ -23,6 +23,9 @@ public sealed class CommandMode : IConnectionMode
   // Uses "Cmd" prefix to avoid collisions with sender-side "Auto" names from ObjectRegistry.
   private readonly ConcurrentDictionary<string, int> _nextRecvCmd = new();
 
+  // Preallocated static delegate to avoid per-call closure allocation in AddOrUpdate
+  private static readonly Func<string, int, int> IncrementValue = static (_, old) => old + 1;
+
   public bool UsesFraming => true;
 
   public IReadOnlyList<CongaEvent> OnBytesReceived(string connectionName, ReadOnlySpan<byte> data)
@@ -30,47 +33,43 @@ public sealed class CommandMode : IConnectionMode
 
   public IReadOnlyList<CongaEvent> OnFrameReceived(string connectionName, FrameData frame)
   {
-    var events = new List<CongaEvent>();
     var correlationId = frame.CorrelationId;
 
     switch (frame.MsgType) {
       case MsgType.Data: {
-          // Look up or create a local cmdName for this correlation ID
           var cmdName = ResolveOrCreateCmdName(connectionName, correlationId);
           var cmdObjectName = string.IsNullOrEmpty(cmdName) ? connectionName : $"{connectionName}.{cmdName}";
 
           TrackCommand(connectionName, cmdName);
-          events.Add(new CongaEvent {
+          return [new CongaEvent {
             ObjectName = cmdObjectName,
             Type = EventType.Receive,
             Payload = frame.Payload,
             PayloadOwner = frame.TakePayloadOwner(),
             UserHeaders = frame.RawUserHeaders,
             UserHeadersOwner = frame.TakeRawUserHeadersOwner()
-          });
-          break;
+          }];
         }
 
       case MsgType.Progress: {
           var cmdName = LookupCmdName(connectionName, correlationId) ?? "";
           var cmdObjectName = string.IsNullOrEmpty(cmdName) ? connectionName : $"{connectionName}.{cmdName}";
 
-          events.Add(new CongaEvent {
+          return [new CongaEvent {
             ObjectName = cmdObjectName,
             Type = EventType.Progress,
             Payload = frame.Payload,
             PayloadOwner = frame.TakePayloadOwner(),
             UserHeaders = frame.RawUserHeaders,
             UserHeadersOwner = frame.TakeRawUserHeadersOwner()
-          });
-          break;
+          }];
         }
 
       case MsgType.Respond: {
           var cmdName = LookupCmdName(connectionName, correlationId) ?? "";
           var cmdObjectName = string.IsNullOrEmpty(cmdName) ? connectionName : $"{connectionName}.{cmdName}";
 
-          events.Add(new CongaEvent {
+          var result = new CongaEvent {
             ObjectName = cmdObjectName,
             Type = EventType.Receive,
             Payload = frame.Payload,
@@ -78,14 +77,15 @@ public sealed class CommandMode : IConnectionMode
             UserHeaders = frame.RawUserHeaders,
             UserHeadersOwner = frame.TakeRawUserHeadersOwner(),
             IsTerminal = true
-          });
+          };
           UntrackCommand(connectionName, cmdName);
           RemoveCorrelation(connectionName, correlationId, cmdName);
-          break;
+          return [result];
         }
-    }
 
-    return events;
+      default:
+          return [];
+    }
   }
 
   public OutboundMessage PrepareOutbound(string connectionName, ReadOnlyMemory<byte> payload, byte[]? userHeaders, PostSendAction closeFlag, string? cmdName)
@@ -221,8 +221,11 @@ public sealed class CommandMode : IConnectionMode
 
     // Generate a receiver-side name. Uses "Cmd" prefix (not "Auto") to avoid
     // collisions with sender-side auto-names from ObjectRegistry.GenerateAutoName.
-    var n = _nextRecvCmd.AddOrUpdate(connectionName, 0, (_, old) => old + 1);
-    var localName = $"Cmd{n:D8}";
+    var n = _nextRecvCmd.AddOrUpdate(connectionName, 0, IncrementValue);
+    var localName = string.Create(11, n, static (span, n) => {
+      "Cmd".AsSpan().CopyTo(span);
+      n.TryFormat(span[3..], out _, "D8");
+    });
 
     var cmdMap = _cmdToGuid.GetOrAdd(connectionName, _ => new ConcurrentDictionary<string, Guid>());
     guidMap[correlationId] = localName;
