@@ -234,13 +234,13 @@ def _functional_scenarios() -> list[Scenario]:
 def _benchmark_scenarios(depth: str, full_compression: bool) -> list[Scenario]:
     if depth == "deep":
         sizes = [1024, 1024 * 100, 1024 * 1024]
-        warmup, measured = 2, 8
+        warmup, measured = 5, 30
     elif depth == "balanced":
         sizes = [1024, 1024 * 100]
-        warmup, measured = 1, 5
+        warmup, measured = 5, 30
     else:
         sizes = [1024, 1024 * 16]
-        warmup, measured = 1, 3
+        warmup, measured = 5, 30
 
     modes = ["Raw", "Text", "BlkRaw", "BlkText", "Command"]
     patterns = ["Random", "Compressible"]
