@@ -1,0 +1,12 @@
+ echoSrv;r1;data
+ CS.Bind
+ ⎕←h←CS.Init''
+ ⎕←CS.Srv h'S1' '' 8080 'Command' 16384  ⍝ create + start server
+
+ ⎕←CS.Wait h'S1' 50000       ⍝ server connect
+ :While 1
+     r1←CS.Wait h'S1' 5000       ⍝ wait for next event
+     data←0(220⌶)4⊃r1
+     data←1(220⌶)100+data
+     {}CS.Respond h(⊃r1)data
+ :EndWhile

@@ -1,0 +1,12 @@
+ echoClt;i;c1;data;r1;t_;n
+ CS.Bind
+ ⎕←h←CS.Init''
+ ⎕←CS.Clt h'C1' '127.0.0.1' 8080 'Command' 16384 5000  ⍝ create + connect client
+ ⎕←t_←⎕AI[3]
+ :For i :In ⍳n←10000
+     data←1(220⌶)⎕TS
+     c1←CS.Send h'C1'data
+     r1←CS.Wait h(2⊃c1)5000       ⍝ wait for next event
+     {}0(220⌶)4⊃r1
+ :EndFor
+ ⎕←(⎕AI[3]-t_)÷n

@@ -42,10 +42,10 @@
       ⎕NA'I4 ',DllPath,'|conga_srv_start P <0T'
       ⎕NA'I4 ',DllPath,'|conga_clt_create P <0T <0T I4 <0T I4 >0T[] I4 >I4'
       ⎕NA'I4 ',DllPath,'|conga_clt_connect P <0T I4'
-      ⎕NA'I4 ',DllPath,'|conga_wait P <0T I4 >0T[] I4 >0T[] I4 >I4 >U1[] I4 >I4 >U1[] I4 >I4'
-      ⎕NA'I4 ',DllPath,'|conga_send P <0T <U1[] I4 <U1[] I4 I4 I4 I4 I4 >0T[] I4 >I4'
-      ⎕NA'I4 ',DllPath,'|conga_respond P <0T <U1[] I4 I4 I4'
-      ⎕NA'I4 ',DllPath,'|conga_progress P <0T <U1[] I4 I4 I4'
+      ⎕NA'I4 ',DllPath,'|conga_wait P <0T I4 >0T[] I4 >0T[] I4 >I4 >I1[] I4 >I4 >I1[] I4 >I4'
+      ⎕NA'I4 ',DllPath,'|conga_send P <0T <I1[] I4 <I1[] I4 I4 I4 I4 I4 >0T[] I4 >I4'
+      ⎕NA'I4 ',DllPath,'|conga_respond P <0T <I1[] I4 I4 I4'
+      ⎕NA'I4 ',DllPath,'|conga_progress P <0T <I1[] I4 I4 I4'
     ∇
 
     ⍝ ── Error Handling ────────────────────────────────────────
@@ -94,7 +94,7 @@
     ∇ r←GetProp(h obj prop)
     ⍝ Get a property. Returns parsed JSON value.
     ⍝ Result: (rc jsonString actualLen)
-      :If 0=1⊃r←conga_getprop h obj prop(4096 ⌈0)4096 0
+      :If 0=1⊃r←conga_getprop h obj prop(4096⌈0)4096 0
           r←⎕JSON⊃1↓r  ⍝ parse JSON, return value
       :EndIf
     ∇
@@ -103,21 +103,21 @@
 
     ∇ r←Tree(h obj)
     ⍝ Returns the object hierarchy as parsed JSON.
-      :If 0=1⊃r←conga_tree h obj(65536 ⌈0)65536 0
+      :If 0=1⊃r←conga_tree h obj(65536⌈0)65536 0
           r←⎕JSON⊃1↓r
       :EndIf
     ∇
 
     ∇ r←Describe(h obj)
     ⍝ Returns all properties of an object as parsed JSON.
-      :If 0=1⊃r←conga_describe h obj(65536 ⌈0)65536 0
+      :If 0=1⊃r←conga_describe h obj(65536⌈0)65536 0
           r←⎕JSON⊃1↓r
       :EndIf
     ∇
 
     ∇ r←Names(h obj)
     ⍝ Returns child names as parsed JSON array.
-      :If 0=1⊃r←conga_names h obj(65536 ⌈0)65536 0
+      :If 0=1⊃r←conga_names h obj(65536⌈0)65536 0
           r←⎕JSON⊃1↓r
       :EndIf
     ∇
@@ -133,19 +133,19 @@
     ⍝ mode  = 'Command' 'Text' 'Raw' 'BlkText' 'BlkRaw'
     ⍝ bufSize = receive buffer size
     ⍝ Returns: assigned server name
-      rc sName←2↑conga_srv_create h name addr port mode bufSize(256 ⌈0)256 0
+      rc sName←2↑conga_srv_create h name addr port mode bufSize(256⌈0)256 0
       :If rc≠0 ⋄ ⎕SIGNAL⊂('EN' 11)('EM'('srv_create failed: ',⍕rc)) ⋄ :EndIf
-
+     
       ⍝ Phase 3: Start
       rc←conga_srv_start h sName
       :If rc≠0 ⋄ ⎕SIGNAL⊂('EN' 11)('EM'('srv_start failed: ',⍕rc)) ⋄ :EndIf
-
+     
       r←sName
     ∇
 
     ∇ r←SrvCreate(h name addr port mode bufSize)
     ⍝ Phase 1 only: create server without starting. Returns assigned name.
-      r←Check conga_srv_create h name addr port mode bufSize(256 ⌈0)256 0
+      r←Check conga_srv_create h name addr port mode bufSize(256⌈0)256 0
       r←⊃r
     ∇
 
@@ -160,19 +160,19 @@
     ⍝ Three-phase client: create → configure → connect.
     ⍝ timeout = connect timeout in milliseconds
     ⍝ Returns: assigned client name
-      rc cName←2↑conga_clt_create h name addr port mode bufSize(256 ⌈0)256 0
+      rc cName←2↑conga_clt_create h name addr port mode bufSize(256⌈0)256 0
       :If rc≠0 ⋄ ⎕SIGNAL⊂('EN' 11)('EM'('clt_create failed: ',⍕rc)) ⋄ :EndIf
-
+     
       ⍝ Phase 3: Connect
       rc←conga_clt_connect h cName timeout
       :If rc≠0 ⋄ ⎕SIGNAL⊂('EN' 11)('EM'('clt_connect failed: ',⍕rc)) ⋄ :EndIf
-
+     
       r←cName
     ∇
 
     ∇ r←CltCreate(h name addr port mode bufSize)
     ⍝ Phase 1 only: create client without connecting. Returns assigned name.
-      r←Check conga_clt_create h name addr port mode bufSize(256 ⌈0)256 0
+      r←Check conga_clt_create h name addr port mode bufSize(256⌈0)256 0
       r←⊃r
     ∇
 
@@ -199,22 +199,24 @@
       :EndIf
     ∇
 
-    ∇ r←Send(h name data);closeFlag;hdrs;rc;outName
+    ∇ r←Send(h name data);closeFlag;hdrs;rc;outName;trackFlag
     ⍝ Send data on a connection. Returns (rc resolvedHandle).
     ⍝ In Command mode with a client name, auto-generates a command handle.
     ⍝ data must be a byte vector (⎕DR 83).
       closeFlag←0 ⋄ hdrs←⍬
-      rc outName←2↑conga_send h name data(≢data)hdrs(≢hdrs)closeFlag 0 0 0 256 256 0
+      trackFlag←0
+      rc outName←2↑conga_send h name data(≢data)hdrs(≢hdrs)closeFlag 0 0 trackFlag 256 256 0
       r←rc outName
     ∇
 
-    ∇ r←SendTracked(h name data);closeFlag;hdrs;rc;outName
+    ∇ r←SendTracked(h name data);closeFlag;hdrs;rc;outName;trackFlag
     ⍝ Send data with mailbox tracking (track=1). Race-safe for concurrent Wait patterns.
     ⍝ The response is routed to a per-command mailbox, preventing broad waiters from
     ⍝ stealing it. Pair with a specific Wait on the returned handle.
     ⍝ Returns (rc resolvedHandle).
       closeFlag←0 ⋄ hdrs←⍬
-      rc outName←2↑conga_send h name data(≢data)hdrs(≢hdrs)closeFlag 0 0 1 256 256 0
+      trackFlag←1
+      rc outName←2↑conga_send h name data(≢data)hdrs(≢hdrs)closeFlag 0 0 trackFlag 256 256 0
       r←rc outName
     ∇
 
