@@ -26,6 +26,25 @@ public sealed class CommandMode : IConnectionMode
   // Preallocated static delegate to avoid per-call closure allocation in AddOrUpdate
   private static readonly Func<string, int, int> IncrementValue = static (_, old) => old + 1;
 
+  private static int GetPaddedDecimalWidth(int value, int minimumDigits)
+  {
+    if (value < 0)
+      throw new ArgumentOutOfRangeException(nameof(value));
+
+    var digits =
+        value >= 1_000_000_000 ? 10 :
+        value >= 100_000_000 ? 9 :
+        value >= 10_000_000 ? 8 :
+        value >= 1_000_000 ? 7 :
+        value >= 100_000 ? 6 :
+        value >= 10_000 ? 5 :
+        value >= 1_000 ? 4 :
+        value >= 100 ? 3 :
+        value >= 10 ? 2 : 1;
+
+    return Math.Max(digits, minimumDigits);
+  }
+
   public bool UsesFraming => true;
 
   public IReadOnlyList<CongaEvent> OnBytesReceived(string connectionName, ReadOnlySpan<byte> data)
@@ -222,9 +241,11 @@ public sealed class CommandMode : IConnectionMode
     // Generate a receiver-side name. Uses "Cmd" prefix (not "Auto") to avoid
     // collisions with sender-side auto-names from ObjectRegistry.GenerateAutoName.
     var n = _nextRecvCmd.AddOrUpdate(connectionName, 0, IncrementValue);
-    var localName = string.Create(11, n, static (span, n) => {
+    var width = GetPaddedDecimalWidth(n, 8);
+    var localName = string.Create(3 + width, n, static (span, n) => {
       "Cmd".AsSpan().CopyTo(span);
-      n.TryFormat(span[3..], out _, "D8");
+      if (!n.TryFormat(span[3..], out _, "D8"))
+        throw new InvalidOperationException("Failed to format command name.");
     });
 
     var cmdMap = _cmdToGuid.GetOrAdd(connectionName, _ => new ConcurrentDictionary<string, Guid>());

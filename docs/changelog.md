@@ -16,6 +16,10 @@
 6. **Removed redundant FlushAsync** — `stream.FlushAsync()` after every frame write removed (NoDelay makes it a no-op; when Nagle is on, the OS handles buffering).
 7. **NativeAOT speed flag** — `<IlcOptimizationPreference>Speed</IlcOptimizationPreference>` added to csproj.
 
+**Follow-up fixes after review:**
+- Generated `CON####` / `Auto########` / `Cmd########` names now grow correctly once counters exceed the minimum width, instead of producing malformed names.
+- `CommandMailbox.TryReceive(Timeout.Infinite)` once again waits indefinitely, matching previous semantics.
+
 **New property:**
 | Property | Type | Default | Applies to | Description |
 |----------|------|---------|------------|-------------|

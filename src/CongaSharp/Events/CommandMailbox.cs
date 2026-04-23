@@ -49,44 +49,47 @@ public sealed class CommandMailbox : IDisposable
     if (_channel.Reader.TryRead(out var immediate))
       return immediate;
 
-    // Slow path: must wait for an event to arrive
+    // Slow path: must wait for an event to arrive. Preserve Timeout.Infinite semantics
+    // while still avoiding allocations when the event is already buffered.
+    CancellationTokenSource? timeoutCts = null;
+    CancellationTokenSource? linkedCts = null;
     try {
-      using var timeoutCts = new CancellationTokenSource(timeoutMs);
-      using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(
-          timeoutCts.Token, cancellationToken);
+      CancellationToken waitToken;
+      if (timeoutMs == Timeout.Infinite) {
+        waitToken = cancellationToken;
+      } else {
+        timeoutCts = new CancellationTokenSource(timeoutMs);
+        if (cancellationToken.CanBeCanceled) {
+          linkedCts = CancellationTokenSource.CreateLinkedTokenSource(timeoutCts.Token, cancellationToken);
+          waitToken = linkedCts.Token;
+        } else {
+          waitToken = timeoutCts.Token;
+        }
+      }
 
-      // Spin briefly on TryRead before falling back to async wait
-      var token = linkedCts.Token;
-      var sw = System.Diagnostics.Stopwatch.StartNew();
-      while (sw.ElapsedMilliseconds < timeoutMs) {
+      while (true) {
         if (_channel.Reader.TryRead(out var evt))
           return evt;
-        if (token.IsCancellationRequested)
-          return null;
 
         // Wait for data using WaitToReadAsync — avoids .AsTask() on the common path
-        var waitTask = _channel.Reader.WaitToReadAsync(token);
+        var waitTask = _channel.Reader.WaitToReadAsync(waitToken);
         if (waitTask.IsCompletedSuccessfully) {
-          if (waitTask.Result && _channel.Reader.TryRead(out evt))
-            return evt;
-          return null; // channel completed with no data
+          if (!waitTask.Result)
+            return null;
+          continue;
         }
 
         // Must block — convert to Task only here (rare: event hasn't arrived yet)
-        try {
-          if (!waitTask.AsTask().GetAwaiter().GetResult())
-            return null; // channel completed
-          if (_channel.Reader.TryRead(out evt))
-            return evt;
-        } catch (OperationCanceledException) {
+        if (!waitTask.AsTask().GetAwaiter().GetResult())
           return null;
-        }
       }
-      return null;
     } catch (OperationCanceledException) {
       return null;
     } catch (ChannelClosedException) {
       return null;
+    } finally {
+      linkedCts?.Dispose();
+      timeoutCts?.Dispose();
     }
   }
 

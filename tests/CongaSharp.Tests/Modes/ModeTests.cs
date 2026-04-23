@@ -369,6 +369,27 @@ public class ModeTests
   }
 
   [Fact]
+  public void CommandMode_ReceiverNames_GrowPastMinimumWidth()
+  {
+    var mode = new CommandMode();
+    var counters = Assert.IsType<System.Collections.Concurrent.ConcurrentDictionary<string, int>>(
+        typeof(CommandMode)
+            .GetField("_nextRecvCmd", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!
+            .GetValue(mode));
+    counters["CON"] = 99_999_999;
+
+    var events = mode.OnFrameReceived("CON", new FrameData {
+      MsgType = MsgType.Data,
+      CmdName = "",
+      CorrelationId = Guid.NewGuid(),
+      Payload = default,
+      RawUserHeaders = default
+    });
+
+    Assert.EndsWith(".Cmd100000000", events[0].ObjectName);
+  }
+
+  [Fact]
   public void CommandMode_DoubleRespond_ReturnsNull()
   {
     var mode = new CommandMode();

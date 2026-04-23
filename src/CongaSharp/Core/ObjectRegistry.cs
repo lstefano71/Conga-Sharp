@@ -17,6 +17,25 @@ public sealed class ObjectRegistry
   // Preallocated static delegate to avoid per-call closure allocation in AddOrUpdate
   private static readonly Func<string, int, int> IncrementValue = static (_, old) => old + 1;
 
+  private static int GetPaddedDecimalWidth(int value, int minimumDigits)
+  {
+    if (value < 0)
+      throw new ArgumentOutOfRangeException(nameof(value));
+
+    var digits =
+        value >= 1_000_000_000 ? 10 :
+        value >= 100_000_000 ? 9 :
+        value >= 10_000_000 ? 8 :
+        value >= 1_000_000 ? 7 :
+        value >= 100_000 ? 6 :
+        value >= 10_000 ? 5 :
+        value >= 1_000 ? 4 :
+        value >= 100 ? 3 :
+        value >= 10 ? 2 : 1;
+
+    return Math.Max(digits, minimumDigits);
+  }
+
   public string GenerateServerName()
   {
     var n = Interlocked.Increment(ref _nextServer);
@@ -32,11 +51,13 @@ public sealed class ObjectRegistry
   public string GenerateConnectionName(string parentName)
   {
     var n = _nextConnection.AddOrUpdate(parentName, 1, IncrementValue);
-    return string.Create(parentName.Length + 8, (parentName, n), static (span, state) => {
+    var width = GetPaddedDecimalWidth(n, 4);
+    return string.Create(parentName.Length + 4 + width, (parentName, n), static (span, state) => {
       state.parentName.AsSpan().CopyTo(span);
       span[state.parentName.Length] = '.';
       "CON".AsSpan().CopyTo(span[(state.parentName.Length + 1)..]);
-      state.n.TryFormat(span[(state.parentName.Length + 4)..], out _, "D4");
+      if (!state.n.TryFormat(span[(state.parentName.Length + 4)..], out _, "D4"))
+        throw new InvalidOperationException("Failed to format connection name.");
     });
   }
 
@@ -48,11 +69,13 @@ public sealed class ObjectRegistry
   public string GenerateAutoName(string parentName)
   {
     var n = _nextAuto.AddOrUpdate(parentName, 0, IncrementValue);
-    return string.Create(parentName.Length + 13, (parentName, n), static (span, state) => {
+    var width = GetPaddedDecimalWidth(n, 8);
+    return string.Create(parentName.Length + 5 + width, (parentName, n), static (span, state) => {
       state.parentName.AsSpan().CopyTo(span);
       span[state.parentName.Length] = '.';
       "Auto".AsSpan().CopyTo(span[(state.parentName.Length + 1)..]);
-      state.n.TryFormat(span[(state.parentName.Length + 5)..], out _, "D8");
+      if (!state.n.TryFormat(span[(state.parentName.Length + 5)..], out _, "D8"))
+        throw new InvalidOperationException("Failed to format auto-generated name.");
     });
   }
 

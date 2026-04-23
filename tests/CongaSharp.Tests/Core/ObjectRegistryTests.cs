@@ -39,6 +39,26 @@ public class ObjectRegistryTests
   }
 
   [Fact]
+  public void GenerateConnectionName_GrowsPastMinimumWidth()
+  {
+    var counters = GetPrivateField<System.Collections.Concurrent.ConcurrentDictionary<string, int>>(
+        _registry, "_nextConnection");
+    counters["S1"] = 9999;
+
+    Assert.Equal("S1.CON10000", _registry.GenerateConnectionName("S1"));
+  }
+
+  [Fact]
+  public void GenerateAutoName_GrowsPastMinimumWidth()
+  {
+    var counters = GetPrivateField<System.Collections.Concurrent.ConcurrentDictionary<string, int>>(
+        _registry, "_nextAuto");
+    counters["C1"] = 99_999_999;
+
+    Assert.Equal("C1.Auto100000000", _registry.GenerateAutoName("C1"));
+  }
+
+  [Fact]
   public void TryAdd_And_Lookup()
   {
     var srv = new ServerObject("S1", "", 5000, "Command", 16384);
@@ -130,5 +150,14 @@ public class ObjectRegistryTests
     });
     Assert.All(results, r => Assert.True(r));
     Assert.Equal(count, _registry.GetAllObjects().Count);
+  }
+
+  private static T GetPrivateField<T>(object target, string fieldName)
+  {
+    var field = target.GetType().GetField(
+        fieldName,
+        System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
+    Assert.NotNull(field);
+    return Assert.IsType<T>(field!.GetValue(target));
   }
 }

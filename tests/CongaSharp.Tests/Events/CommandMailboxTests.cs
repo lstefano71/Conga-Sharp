@@ -46,6 +46,24 @@ public class CommandMailboxTests
   }
 
   [Fact]
+  public void TryReceive_InfiniteTimeout_BlocksUntilPost()
+  {
+    using var mailbox = new CommandMailbox();
+    CongaEvent? result = null;
+
+    var waiter = Task.Run(() => result = mailbox.TryReceive(Timeout.Infinite));
+
+    Thread.Sleep(100);
+    Assert.False(waiter.IsCompleted);
+
+    mailbox.Post(new CongaEvent { ObjectName = "C1.Cmd", Type = EventType.Receive });
+
+    waiter.Wait(2000);
+    Assert.NotNull(result);
+    Assert.Equal(EventType.Receive, result!.Type);
+  }
+
+  [Fact]
   public void Complete_AllowsRemainingReads()
   {
     using var mailbox = new CommandMailbox();
