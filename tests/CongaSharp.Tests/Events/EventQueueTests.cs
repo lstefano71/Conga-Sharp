@@ -10,13 +10,13 @@ public class EventQueueTests
   public void Enqueue_Dequeue_SingleEvent()
   {
     using var queue = new EventQueue();
-    var evt = new CongaEvent { ObjectName = "S1.CON0001", Type = EventType.Receive, Payload = [1, 2, 3] };
+    var evt = new CongaEvent { ObjectName = "S1.CON0001", Type = EventType.Receive, Payload = new byte[] { 1, 2, 3 } };
     queue.Enqueue(evt);
 
     var result = queue.Wait(null, 1000);
     Assert.Equal(EventType.Receive, result.Type);
     Assert.Equal("S1.CON0001", result.ObjectName);
-    Assert.Equal(new byte[] { 1, 2, 3 }, result.Payload);
+    Assert.Equal(new byte[] { 1, 2, 3 }, result.Payload.ToArray());
   }
 
   [Fact]
@@ -279,14 +279,14 @@ public class EventQueueTests
     queue.Enqueue(new CongaEvent {
       ObjectName = "C1.Auto0",
       Type = EventType.Receive,
-      Payload = [42],
+      Payload = new byte[] { 42 },
       IsTerminal = true
     });
 
     // Wait should return immediately
     var result = queue.Wait("C1.Auto0", 5000);
     Assert.Equal(EventType.Receive, result.Type);
-    Assert.Equal(new byte[] { 42 }, result.Payload);
+    Assert.Equal(new byte[] { 42 }, result.Payload.ToArray());
     Assert.True(result.IsTerminal);
   }
 
@@ -296,26 +296,26 @@ public class EventQueueTests
     using var queue = new EventQueue();
     queue.RegisterMailbox("C1.Auto0");
 
-    queue.Enqueue(new CongaEvent { ObjectName = "C1.Auto0", Type = EventType.Progress, Payload = [1] });
-    queue.Enqueue(new CongaEvent { ObjectName = "C1.Auto0", Type = EventType.Progress, Payload = [2] });
+    queue.Enqueue(new CongaEvent { ObjectName = "C1.Auto0", Type = EventType.Progress, Payload = new byte[] { 1 } });
+    queue.Enqueue(new CongaEvent { ObjectName = "C1.Auto0", Type = EventType.Progress, Payload = new byte[] { 2 } });
     queue.Enqueue(new CongaEvent {
       ObjectName = "C1.Auto0",
       Type = EventType.Receive,
-      Payload = [3],
+      Payload = new byte[] { 3 },
       IsTerminal = true
     });
 
     var r1 = queue.Wait("C1.Auto0", 100);
     Assert.Equal(EventType.Progress, r1.Type);
-    Assert.Equal(new byte[] { 1 }, r1.Payload);
+    Assert.Equal(new byte[] { 1 }, r1.Payload.ToArray());
 
     var r2 = queue.Wait("C1.Auto0", 100);
     Assert.Equal(EventType.Progress, r2.Type);
-    Assert.Equal(new byte[] { 2 }, r2.Payload);
+    Assert.Equal(new byte[] { 2 }, r2.Payload.ToArray());
 
     var r3 = queue.Wait("C1.Auto0", 100);
     Assert.Equal(EventType.Receive, r3.Type);
-    Assert.Equal(new byte[] { 3 }, r3.Payload);
+    Assert.Equal(new byte[] { 3 }, r3.Payload.ToArray());
   }
 
   [Fact]
@@ -377,8 +377,8 @@ public class EventQueueTests
     using var queue = new EventQueue();
     queue.RegisterMailbox("C1.Auto0");
 
-    queue.Enqueue(new CongaEvent { ObjectName = "C1.Auto0", Type = EventType.Progress, Payload = [1] });
-    queue.Enqueue(new CongaEvent { ObjectName = "C1.Auto0", Type = EventType.Receive, Payload = [2], IsTerminal = true });
+    queue.Enqueue(new CongaEvent { ObjectName = "C1.Auto0", Type = EventType.Progress, Payload = new byte[] { 1 } });
+    queue.Enqueue(new CongaEvent { ObjectName = "C1.Auto0", Type = EventType.Receive, Payload = new byte[] { 2 }, IsTerminal = true });
 
     var first = queue.Wait("C1.Auto0", 100);
     Assert.Equal(EventType.Progress, first.Type);
@@ -441,7 +441,7 @@ public class EventQueueTests
     queue.RegisterMailbox("C1.Auto0");
 
     // Enqueue one event to mailbox, one to global queue
-    queue.Enqueue(new CongaEvent { ObjectName = "C1.Auto0", Type = EventType.Receive, Payload = [1] });
+    queue.Enqueue(new CongaEvent { ObjectName = "C1.Auto0", Type = EventType.Receive, Payload = new byte[] { 1 } });
     queue.Enqueue(new CongaEvent { ObjectName = "C1", Type = EventType.Connect });
 
     // Global queue should have only the Connect event
@@ -463,8 +463,8 @@ public class EventQueueTests
     queue.RegisterMailbox("C1.Tracked");
     // "C1.Untracked" has no mailbox
 
-    queue.Enqueue(new CongaEvent { ObjectName = "C1.Tracked", Type = EventType.Receive, Payload = [1] });
-    queue.Enqueue(new CongaEvent { ObjectName = "C1.Untracked", Type = EventType.Receive, Payload = [2] });
+    queue.Enqueue(new CongaEvent { ObjectName = "C1.Tracked", Type = EventType.Receive, Payload = new byte[] { 1 } });
+    queue.Enqueue(new CongaEvent { ObjectName = "C1.Untracked", Type = EventType.Receive, Payload = new byte[] { 2 } });
 
     // Global queue has only the untracked event
     Assert.Equal(1, queue.Count);

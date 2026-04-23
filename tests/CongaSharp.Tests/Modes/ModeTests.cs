@@ -66,7 +66,7 @@ public class ModeTests
     Assert.Single(events);
     Assert.Equal(EventType.Receive, events[0].Type);
     Assert.Equal("S1.CON0001", events[0].ObjectName);
-    Assert.Equal(new byte[] { 1, 2, 3 }, events[0].Payload);
+    Assert.Equal(new byte[] { 1, 2, 3 }, events[0].Payload.ToArray());
   }
 
   [Fact]
@@ -111,7 +111,7 @@ public class ModeTests
   {
     var mode = new RawMode();
     Assert.Throws<InvalidOperationException>(() => mode.OnFrameReceived("S1.CON0001",
-        new FrameData { MsgType = MsgType.Data, CmdName = "", CorrelationId = Guid.Empty, Payload = [], UserHeaders = new() }));
+        new FrameData { MsgType = MsgType.Data, CmdName = "", CorrelationId = Guid.Empty, Payload = default, RawUserHeaders = default }));
   }
 
   // --- TextMode ---
@@ -120,10 +120,10 @@ public class ModeTests
   public void TextMode_NoEOM_BehavesLikeRaw()
   {
     var mode = new TextMode();
-    var events = mode.OnBytesReceived("CON", [72, 101, 108, 108, 111]);
+    var events = mode.OnBytesReceived("CON", new byte[] { 72, 101, 108, 108, 111 });
     Assert.Single(events);
     Assert.Equal(EventType.Receive, events[0].Type);
-    Assert.Equal(new byte[] { 72, 101, 108, 108, 111 }, events[0].Payload);
+    Assert.Equal(new byte[] { 72, 101, 108, 108, 111 }, events[0].Payload.ToArray());
   }
 
   [Fact]
@@ -137,8 +137,8 @@ public class ModeTests
     var events = mode.OnBytesReceived("CON", data);
 
     Assert.Equal(2, events.Count);
-    Assert.Equal(new byte[] { 72, 101, 108, 108, 111, 13, 10 }, events[0].Payload);
-    Assert.Equal(new byte[] { 87, 111, 114, 108, 100, 13, 10 }, events[1].Payload);
+    Assert.Equal(new byte[] { 72, 101, 108, 108, 111, 13, 10 }, events[0].Payload.ToArray());
+    Assert.Equal(new byte[] { 87, 111, 114, 108, 100, 13, 10 }, events[1].Payload.ToArray());
   }
 
   [Fact]
@@ -154,7 +154,7 @@ public class ModeTests
     // Complete: "lo\r\n"
     var events2 = mode.OnBytesReceived("CON", new byte[] { 108, 111, 13, 10 });
     Assert.Single(events2);
-    Assert.Equal(new byte[] { 72, 101, 108, 108, 111, 13, 10 }, events2[0].Payload);
+    Assert.Equal(new byte[] { 72, 101, 108, 108, 111, 13, 10 }, events2[0].Payload.ToArray());
   }
 
   [Fact]
@@ -168,7 +168,7 @@ public class ModeTests
 
     Assert.Equal(2, events.Count);
     Assert.Equal(EventType.Receive, events[0].Type);
-    Assert.Equal(new byte[] { 72, 101, 108 }, events[0].Payload);
+    Assert.Equal(new byte[] { 72, 101, 108 }, events[0].Payload.ToArray());
     Assert.Equal(EventType.Closed, events[1].Type);
   }
 
@@ -213,11 +213,11 @@ public class ModeTests
   public void BlkRawMode_OnFrameReceived_DataProducesBlockEvent()
   {
     var mode = new BlkRawMode();
-    var frame = new FrameData { MsgType = MsgType.Data, CmdName = "", CorrelationId = Guid.Empty, Payload = [1, 2, 3], UserHeaders = new() };
+    var frame = new FrameData { MsgType = MsgType.Data, CmdName = "", CorrelationId = Guid.Empty, Payload = new byte[] { 1, 2, 3 }, RawUserHeaders = default };
     var events = mode.OnFrameReceived("CON", frame);
     Assert.Single(events);
     Assert.Equal(EventType.Block, events[0].Type);
-    Assert.Equal(new byte[] { 1, 2, 3 }, events[0].Payload);
+    Assert.Equal(new byte[] { 1, 2, 3 }, events[0].Payload.ToArray());
   }
 
   [Fact]
@@ -242,7 +242,7 @@ public class ModeTests
   {
     var mode = new CommandMode();
     var corrId = Guid.NewGuid();
-    var frame = new FrameData { MsgType = MsgType.Data, CmdName = "", CorrelationId = corrId, Payload = [42], UserHeaders = new() };
+    var frame = new FrameData { MsgType = MsgType.Data, CmdName = "", CorrelationId = corrId, Payload = new byte[] { 42 }, RawUserHeaders = default };
     var events = mode.OnFrameReceived("CON", frame);
 
     Assert.Single(events);
@@ -257,9 +257,9 @@ public class ModeTests
     var mode = new CommandMode();
     var corrId = Guid.NewGuid();
     // First send Data to establish the correlation
-    mode.OnFrameReceived("CON", new FrameData { MsgType = MsgType.Data, CmdName = "", CorrelationId = corrId, Payload = [], UserHeaders = new() });
+    mode.OnFrameReceived("CON", new FrameData { MsgType = MsgType.Data, CmdName = "", CorrelationId = corrId, Payload = default, RawUserHeaders = default });
 
-    var frame = new FrameData { MsgType = MsgType.Progress, CmdName = "", CorrelationId = corrId, Payload = [50], UserHeaders = new() };
+    var frame = new FrameData { MsgType = MsgType.Progress, CmdName = "", CorrelationId = corrId, Payload = new byte[] { 50 }, RawUserHeaders = default };
     var events = mode.OnFrameReceived("CON", frame);
 
     Assert.Single(events);
@@ -272,12 +272,12 @@ public class ModeTests
   {
     var mode = new CommandMode();
     var corrId = Guid.NewGuid();
-    var dataEvents = mode.OnFrameReceived("CON", new FrameData { MsgType = MsgType.Data, CmdName = "", CorrelationId = corrId, Payload = [], UserHeaders = new() });
+    var dataEvents = mode.OnFrameReceived("CON", new FrameData { MsgType = MsgType.Data, CmdName = "", CorrelationId = corrId, Payload = default, RawUserHeaders = default });
     // Extract the auto-generated cmdName suffix
     var cmdName = dataEvents[0].ObjectName.Split('.')[1];
     Assert.True(mode.IsCommandActive("CON", cmdName));
 
-    var frame = new FrameData { MsgType = MsgType.Respond, CmdName = "", CorrelationId = corrId, Payload = [99], UserHeaders = new() };
+    var frame = new FrameData { MsgType = MsgType.Respond, CmdName = "", CorrelationId = corrId, Payload = new byte[] { 99 }, RawUserHeaders = default };
     var events = mode.OnFrameReceived("CON", frame);
 
     Assert.Single(events);
@@ -301,7 +301,7 @@ public class ModeTests
     var mode = new CommandMode();
     // First receive a command to establish the correlation
     var corrId = Guid.NewGuid();
-    var dataEvents = mode.OnFrameReceived("CON", new FrameData { MsgType = MsgType.Data, CmdName = "", CorrelationId = corrId, Payload = [], UserHeaders = new() });
+    var dataEvents = mode.OnFrameReceived("CON", new FrameData { MsgType = MsgType.Data, CmdName = "", CorrelationId = corrId, Payload = default, RawUserHeaders = default });
     var cmdName = dataEvents[0].ObjectName.Split('.')[1];
 
     var msg = mode.TryPrepareRespond("CON", new byte[] { 1, 2 }, cmdName);
@@ -318,7 +318,7 @@ public class ModeTests
     var mode = new CommandMode();
     // First receive a command to establish the correlation
     var corrId = Guid.NewGuid();
-    var dataEvents = mode.OnFrameReceived("CON", new FrameData { MsgType = MsgType.Data, CmdName = "", CorrelationId = corrId, Payload = [], UserHeaders = new() });
+    var dataEvents = mode.OnFrameReceived("CON", new FrameData { MsgType = MsgType.Data, CmdName = "", CorrelationId = corrId, Payload = default, RawUserHeaders = default });
     var cmdName = dataEvents[0].ObjectName.Split('.')[1];
 
     var msg = mode.TryPrepareProgress("CON", new byte[] { 50 }, cmdName);
@@ -335,8 +335,8 @@ public class ModeTests
     var mode = new CommandMode();
     var corrA = Guid.NewGuid();
     var corrB = Guid.NewGuid();
-    mode.OnFrameReceived("CON", new FrameData { MsgType = MsgType.Data, CmdName = "", CorrelationId = corrA, Payload = [], UserHeaders = new() });
-    mode.OnFrameReceived("CON", new FrameData { MsgType = MsgType.Data, CmdName = "", CorrelationId = corrB, Payload = [], UserHeaders = new() });
+    mode.OnFrameReceived("CON", new FrameData { MsgType = MsgType.Data, CmdName = "", CorrelationId = corrA, Payload = default, RawUserHeaders = default });
+    mode.OnFrameReceived("CON", new FrameData { MsgType = MsgType.Data, CmdName = "", CorrelationId = corrB, Payload = default, RawUserHeaders = default });
 
     var events = mode.OnDisconnected("CON");
 
@@ -356,8 +356,8 @@ public class ModeTests
         MsgType = MsgType.Data,
         CmdName = "",
         CorrelationId = corrId,
-        Payload = [],
-        UserHeaders = new()
+        Payload = default,
+        RawUserHeaders = default
       });
       var name = events[0].ObjectName;
       var suffix = name[(name.LastIndexOf('.') + 1)..];
@@ -377,8 +377,8 @@ public class ModeTests
       MsgType = MsgType.Data,
       CmdName = "",
       CorrelationId = corrId,
-      Payload = [],
-      UserHeaders = new()
+      Payload = default,
+      RawUserHeaders = default
     });
     var cmdName = "Cmd00000000";
 
@@ -401,8 +401,8 @@ public class ModeTests
       MsgType = MsgType.Data,
       CmdName = "",
       CorrelationId = corrId,
-      Payload = [],
-      UserHeaders = new()
+      Payload = default,
+      RawUserHeaders = default
     });
     var cmdName = "Cmd00000000";
 
@@ -429,8 +429,8 @@ public class ModeTests
       MsgType = MsgType.Data,
       CmdName = "",
       CorrelationId = corrId,
-      Payload = [],
-      UserHeaders = new()
+      Payload = default,
+      RawUserHeaders = default
     });
     var recvName = events[0].ObjectName;
     Assert.EndsWith(".Cmd00000000", recvName);

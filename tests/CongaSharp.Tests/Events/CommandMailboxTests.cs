@@ -10,7 +10,7 @@ public class CommandMailboxTests
   public void PostAndReceive_BasicRoundtrip()
   {
     using var mailbox = new CommandMailbox();
-    var evt = new CongaEvent { ObjectName = "C1.Auto0", Type = EventType.Receive, Payload = [1, 2, 3] };
+    var evt = new CongaEvent { ObjectName = "C1.Auto0", Type = EventType.Receive, Payload = new byte[] { 1, 2, 3 } };
 
     Assert.True(mailbox.Post(evt));
     var result = mailbox.TryReceive(1000);
@@ -18,7 +18,7 @@ public class CommandMailboxTests
     Assert.NotNull(result);
     Assert.Equal(EventType.Receive, result!.Type);
     Assert.Equal("C1.Auto0", result.ObjectName);
-    Assert.Equal(new byte[] { 1, 2, 3 }, result.Payload);
+    Assert.Equal(new byte[] { 1, 2, 3 }, result.Payload.ToArray());
   }
 
   [Fact]

@@ -1,5 +1,7 @@
 namespace CongaSharp.Protocol;
 
+using CongaSharp.Buffers;
+
 using K4os.Compression.LZ4;
 
 using System.Buffers;
@@ -96,6 +98,41 @@ public static class Compression
       CompressionAlgorithm.Zstd => DecompressZstd(data),
       _ => throw new ArgumentOutOfRangeException(nameof(algo))
     };
+  }
+
+  /// <summary>
+  /// Decompresses data into a pooled buffer.
+  /// For <see cref="CompressionAlgorithm.None"/>: if <paramref name="sourceOwner"/> is provided,
+  /// transfers ownership (zero-copy); otherwise rents a new buffer and copies.
+  /// For compressed algorithms: decompresses into a new pooled buffer.
+  /// </summary>
+  public static IMemoryOwner<byte> DecompressPooled(
+      CompressionAlgorithm algo,
+      ReadOnlySpan<byte> data,
+      IMemoryOwner<byte>? sourceOwner = null)
+  {
+    if (data.IsEmpty) {
+      sourceOwner?.Dispose();
+      return PooledByteBuffer.Rent(0);
+    }
+
+    if (algo == CompressionAlgorithm.None) {
+      // Zero-copy: transfer ownership of the source buffer if available
+      if (sourceOwner != null)
+        return sourceOwner;
+
+      var buf = PooledByteBuffer.Rent(data.Length);
+      data.CopyTo(buf.Memory.Span);
+      return buf;
+    }
+
+    // Decompress via existing path (library allocates internally),
+    // then copy into a pooled buffer
+    sourceOwner?.Dispose();
+    var decompressed = Decompress(algo, data);
+    var pooled = PooledByteBuffer.Rent(decompressed.Length);
+    decompressed.CopyTo(pooled.Memory.Span);
+    return pooled;
   }
 
   private static byte[] CompressDeflate(ReadOnlySpan<byte> data, int level)

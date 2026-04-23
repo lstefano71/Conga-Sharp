@@ -1,5 +1,6 @@
 namespace CongaSharp.Networking;
 
+using CongaSharp.Buffers;
 using CongaSharp.Errors;
 using CongaSharp.Protocol;
 
@@ -15,6 +16,8 @@ public static class AsyncFrameIO
   /// <summary>
   /// Reads a complete wire protocol frame asynchronously.
   /// Two-stage CRC: header CRC validated before payload allocation.
+  /// Payload and user header buffers are rented from the pool —
+  /// the caller takes ownership via <see cref="FrameReadResult"/> (IDisposable).
   /// </summary>
   public static async Task<FrameReadResult> ReadFrameAsync(
       Stream stream, CancellationToken ct, int maxPayloadSize = 64 * 1024 * 1024)
@@ -39,60 +42,83 @@ public static class AsyncFrameIO
       if (header.PayloadLen > maxPayloadSize || header.UncompressedLen > maxPayloadSize)
         return new FrameReadResult { ErrorCode = ErrorCodes.BufferExceeded, Header = header };
 
-      // Stage 4: Read user headers (keep as new byte[] — owned by FrameReadResult)
-      var headersBytes = Array.Empty<byte>();
+      // Stage 4: Read user headers into pooled buffer
+      PooledByteBuffer? headersOwner = null;
+      ReadOnlyMemory<byte> headersMemory = default;
       if (header.HeadersLen > 0) {
-        headersBytes = new byte[header.HeadersLen];
-        if (await ReadExactAsync(stream, headersBytes, (int)header.HeadersLen, ct).ConfigureAwait(false) < (int)header.HeadersLen)
+        headersOwner = PooledByteBuffer.Rent((int)header.HeadersLen);
+        if (await ReadExactAsync(stream, headersOwner.DangerousGetArray(), (int)header.HeadersLen, ct).ConfigureAwait(false) < (int)header.HeadersLen) {
+          headersOwner.Dispose();
           return new FrameReadResult { ErrorCode = ErrorCodes.SocketClosed, Header = header };
+        }
+        headersMemory = headersOwner.Memory;
       }
 
-      // Stage 5: Read compressed payload (keep as new byte[] — owned by FrameReadResult)
-      var compressedPayload = Array.Empty<byte>();
+      // Stage 5: Read compressed payload into pooled buffer
+      PooledByteBuffer? compressedOwner = null;
+      ReadOnlyMemory<byte> compressedMemory = default;
       if (header.PayloadLen > 0) {
-        compressedPayload = new byte[header.PayloadLen];
-        if (await ReadExactAsync(stream, compressedPayload, (int)header.PayloadLen, ct).ConfigureAwait(false) < (int)header.PayloadLen)
+        compressedOwner = PooledByteBuffer.Rent((int)header.PayloadLen);
+        if (await ReadExactAsync(stream, compressedOwner.DangerousGetArray(), (int)header.PayloadLen, ct).ConfigureAwait(false) < (int)header.PayloadLen) {
+          compressedOwner.Dispose();
+          headersOwner?.Dispose();
           return new FrameReadResult { ErrorCode = ErrorCodes.SocketClosed, Header = header };
+        }
+        compressedMemory = compressedOwner.Memory;
       }
 
       // Stage 6: Validate payload CRC if present
       if (FrameFlags.GetHasPayloadCrc(header.Flags)) {
         var crcBuf = pool.Rent(4);
         try {
-          if (await ReadExactAsync(stream, crcBuf, 4, ct).ConfigureAwait(false) < 4)
+          if (await ReadExactAsync(stream, crcBuf, 4, ct).ConfigureAwait(false) < 4) {
+            compressedOwner?.Dispose();
+            headersOwner?.Dispose();
             return new FrameReadResult { ErrorCode = ErrorCodes.SocketClosed, Header = header };
+          }
 
           var expectedPayloadCrc = BinaryPrimitives.ReadUInt32LittleEndian(crcBuf.AsSpan(0, 4));
-          var actualPayloadCrc = Crc32C.ComputePayloadCrc(headersBytes, compressedPayload);
-          if (expectedPayloadCrc != actualPayloadCrc)
+          var actualPayloadCrc = Crc32C.ComputePayloadCrc(headersMemory.Span, compressedMemory.Span);
+          if (expectedPayloadCrc != actualPayloadCrc) {
+            compressedOwner?.Dispose();
+            headersOwner?.Dispose();
             return new FrameReadResult { ErrorCode = ErrorCodes.CrcFailure, Header = header };
+          }
         } finally {
           pool.Return(crcBuf);
         }
       }
 
-      // Stage 7: Decompress payload and verify uncompressed size
-      byte[] payload;
+      // Stage 7: Decompress payload into pooled buffer
+      // For None: zero-copy transfer of compressedOwner (DecompressPooled returns it).
+      // For compressed: decompress into new pooled buffer, compressedOwner is disposed.
+      IMemoryOwner<byte>? payloadOwner;
+      ReadOnlyMemory<byte> payloadMemory;
       try {
         var algo = FrameFlags.GetCompression(header.Flags);
-        payload = Compression.Decompress(algo, compressedPayload);
+        payloadOwner = Compression.DecompressPooled(algo, compressedMemory.Span, compressedOwner);
+        // compressedOwner is now consumed (either transferred or disposed by DecompressPooled)
+        compressedOwner = null;
+        payloadMemory = payloadOwner.Memory;
       } catch (Exception) {
+        compressedOwner?.Dispose();
+        headersOwner?.Dispose();
         return new FrameReadResult { ErrorCode = ErrorCodes.CompressionError, Header = header };
       }
 
-      if (payload.Length != (int)header.UncompressedLen)
+      if (payloadMemory.Length != (int)header.UncompressedLen) {
+        payloadOwner.Dispose();
+        headersOwner?.Dispose();
         return new FrameReadResult { ErrorCode = ErrorCodes.CompressionError, Header = header };
-
-      // Stage 8: Decode user headers
-      var userHeaders = FrameFlags.GetHasUserHeaders(header.Flags) && headersBytes.Length > 0
-          ? UserHeaders.Decode(headersBytes)
-          : new Dictionary<string, byte[]>();
+      }
 
       return new FrameReadResult {
         ErrorCode = ErrorCodes.Success,
         Header = header,
-        Payload = payload,
-        UserHeaders = userHeaders
+        Payload = payloadMemory,
+        PayloadOwner = payloadOwner,
+        RawUserHeaders = headersMemory,
+        RawUserHeadersOwner = headersOwner
       };
     } finally {
       pool.Return(headerBuf);

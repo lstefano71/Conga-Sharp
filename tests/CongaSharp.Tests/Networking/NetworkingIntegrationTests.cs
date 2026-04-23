@@ -459,7 +459,7 @@ public class NetworkingIntegrationTests : IAsyncLifetime
       var recvEvt = _root.Events.Wait(connName, 5000, _root.ShutdownToken);
       if (recvEvt.Type == EventType.Timeout) break;
       Assert.Equal(EventType.Receive, recvEvt.Type);
-      received.AddRange(recvEvt.Payload);
+      received.AddRange(recvEvt.Payload.ToArray());
     }
 
     Assert.Equal(largeData, received.ToArray());
@@ -489,8 +489,8 @@ public class NetworkingIntegrationTests : IAsyncLifetime
     Assert.True(result.Success);
     Assert.Equal(MsgType.Data, result.Header.MsgType);
     Assert.Equal(corrId, result.Header.CorrelationId);
-    Assert.Equal(payload, result.Payload);
-    Assert.True(result.UserHeaders.ContainsKey("key1"));
-    Assert.Equal("value1"u8.ToArray(), result.UserHeaders["key1"]);
+    Assert.Equal(payload, result.Payload.ToArray());
+    Assert.True(result.DecodedUserHeaders!.ContainsKey("key1"));
+    Assert.Equal("value1"u8.ToArray(), result.DecodedUserHeaders["key1"]);
   }
 }

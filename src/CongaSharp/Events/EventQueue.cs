@@ -98,15 +98,20 @@ public sealed class EventQueue : IDisposable
   /// <summary>
   /// Enqueues an event. If a mailbox exists for the event's ObjectName,
   /// routes to the mailbox; otherwise adds to the global queue.
+  /// If the queue is shutting down, the event is disposed (returns pooled buffers).
   /// </summary>
   public void Enqueue(CongaEvent evt)
   {
-    if (_shutdown) return;
+    if (_shutdown) {
+      evt.Dispose();
+      return;
+    }
 
     // Route to mailbox if one exists for this exact ObjectName
     if (_mailboxes.TryGetValue(evt.ObjectName, out var mailbox)) {
-      mailbox.Post(evt);
-      if (evt.IsTerminal)
+      if (!mailbox.Post(evt))
+        evt.Dispose(); // channel closed — dispose to prevent leak
+      else if (evt.IsTerminal)
         mailbox.Complete();
       return;
     }
@@ -216,10 +221,14 @@ public sealed class EventQueue : IDisposable
   /// <summary>
   /// Re-enqueues an event that could not be delivered (e.g., buffer too small).
   /// Mailbox-aware: if a mailbox exists for the event, requeues there instead of the global queue.
+  /// If the queue is shutting down, the event is disposed.
   /// </summary>
   public void ReEnqueue(CongaEvent evt)
   {
-    if (_shutdown) return;
+    if (_shutdown) {
+      evt.Dispose();
+      return;
+    }
 
     // Route back to mailbox if one exists
     if (_mailboxes.TryGetValue(evt.ObjectName, out var mailbox)) {
@@ -237,7 +246,14 @@ public sealed class EventQueue : IDisposable
   {
     SignalShutdown();
 
-    // Dispose all remaining mailboxes
+    // Drain and dispose remaining events in the global queue
+    lock (_lock) {
+      foreach (var evt in _events)
+        evt.Dispose();
+      _events.Clear();
+    }
+
+    // Dispose all remaining mailboxes (which drain their own events)
     foreach (var kvp in _mailboxes) {
       if (_mailboxes.TryRemove(kvp.Key, out var mailbox))
         mailbox.Dispose();

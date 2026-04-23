@@ -388,7 +388,7 @@ public class FullIntegrationTests : IAsyncLifetime
       case "BlkText": {
           var evt = root.Events.Wait(filter, 30_000, root.ShutdownToken);
           Assert.Equal(EventType.Block, evt.Type);
-          return Task.FromResult(evt.Payload);
+          return Task.FromResult(evt.Payload.ToArray());
         }
 
       case "Command": {
@@ -396,7 +396,7 @@ public class FullIntegrationTests : IAsyncLifetime
           var cmdFilter = filter.Contains('.') ? filter : filter;
           var evt = root.Events.Wait(cmdFilter, 30_000, root.ShutdownToken);
           Assert.Equal(EventType.Receive, evt.Type);
-          return Task.FromResult(evt.Payload);
+          return Task.FromResult(evt.Payload.ToArray());
         }
 
       default:

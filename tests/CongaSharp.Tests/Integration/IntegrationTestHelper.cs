@@ -106,7 +106,7 @@ internal static class IntegrationTestHelper
       var evt = root.Events.Wait(filter, remaining, root.ShutdownToken);
       if (evt.Type == EventType.Timeout) break;
       if (evt.Type == EventType.Receive)
-        received.AddRange(evt.Payload);
+        received.AddRange(evt.Payload.ToArray());
     }
     return received.ToArray();
   }

@@ -55,8 +55,22 @@ public sealed class FrameData
   public required Protocol.MsgType MsgType { get; init; }
   public required string CmdName { get; init; }
   public required Guid CorrelationId { get; init; }
-  public required byte[] Payload { get; init; }
-  public required Dictionary<string, byte[]> UserHeaders { get; init; }
+  public required ReadOnlyMemory<byte> Payload { get; init; }
+  public required ReadOnlyMemory<byte> RawUserHeaders { get; init; }
+
+  /// <summary>
+  /// Optional owner for the Payload buffer.
+  /// Use <see cref="TakePayloadOwner"/> for move-only transfer.
+  /// </summary>
+  internal IDisposable? PayloadOwner
+  {
+    get => _payloadOwner;
+    init => _payloadOwner = value;
+  }
+  private IDisposable? _payloadOwner;
+
+  internal IDisposable? TakePayloadOwner()
+      => Interlocked.Exchange(ref _payloadOwner, null);
 }
 
 /// <summary>

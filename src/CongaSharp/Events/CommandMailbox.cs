@@ -89,5 +89,11 @@ public sealed class CommandMailbox : IDisposable
     if (Interlocked.CompareExchange(ref _disposed, 1, 0) != 0)
       return;
     Complete();
+
+    // Drain and dispose any remaining events
+    while (_requeued.TryDequeue(out var evt))
+      evt.Dispose();
+    while (_channel.Reader.TryRead(out var channelEvt))
+      channelEvt.Dispose();
   }
 }

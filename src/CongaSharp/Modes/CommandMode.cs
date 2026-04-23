@@ -33,10 +33,6 @@ public sealed class CommandMode : IConnectionMode
     var events = new List<CongaEvent>();
     var correlationId = frame.CorrelationId;
 
-    var userHeadersBytes = frame.UserHeaders.Count > 0
-        ? UserHeaders.Encode(frame.UserHeaders)
-        : Array.Empty<byte>();
-
     switch (frame.MsgType) {
       case MsgType.Data: {
           // Look up or create a local cmdName for this correlation ID
@@ -48,7 +44,8 @@ public sealed class CommandMode : IConnectionMode
             ObjectName = cmdObjectName,
             Type = EventType.Receive,
             Payload = frame.Payload,
-            UserHeaders = userHeadersBytes
+            PayloadOwner = frame.TakePayloadOwner(),
+            UserHeaders = frame.RawUserHeaders
           });
           break;
         }
@@ -61,7 +58,8 @@ public sealed class CommandMode : IConnectionMode
             ObjectName = cmdObjectName,
             Type = EventType.Progress,
             Payload = frame.Payload,
-            UserHeaders = userHeadersBytes
+            PayloadOwner = frame.TakePayloadOwner(),
+            UserHeaders = frame.RawUserHeaders
           });
           break;
         }
@@ -74,7 +72,8 @@ public sealed class CommandMode : IConnectionMode
             ObjectName = cmdObjectName,
             Type = EventType.Receive,
             Payload = frame.Payload,
-            UserHeaders = userHeadersBytes,
+            PayloadOwner = frame.TakePayloadOwner(),
+            UserHeaders = frame.RawUserHeaders,
             IsTerminal = true
           });
           UntrackCommand(connectionName, cmdName);

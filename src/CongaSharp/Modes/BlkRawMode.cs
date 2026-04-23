@@ -19,16 +19,13 @@ public sealed class BlkRawMode : IConnectionMode
     // BlkRaw: Data frames produce Block or BlockLast events
     var eventType = frame.MsgType == MsgType.Data ? EventType.Block : EventType.BlockLast;
 
-    var userHeadersBytes = frame.UserHeaders.Count > 0
-        ? UserHeaders.Encode(frame.UserHeaders)
-        : Array.Empty<byte>();
-
     return [new CongaEvent
         {
             ObjectName = connectionName,
             Type = eventType,
             Payload = frame.Payload,
-            UserHeaders = userHeadersBytes
+            PayloadOwner = frame.TakePayloadOwner(),
+            UserHeaders = frame.RawUserHeaders
         }];
   }
 

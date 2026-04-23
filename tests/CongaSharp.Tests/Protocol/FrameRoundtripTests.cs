@@ -19,7 +19,7 @@ public class FrameRoundtripTests
     var result = FrameReader.ReadFrame(ms);
     Assert.True(result.Success);
     Assert.Equal(MsgType.Data, result.Header.MsgType);
-    Assert.Equal(payload, result.Payload);
+    Assert.Equal(payload, result.Payload.ToArray());
   }
 
   [Fact]
@@ -31,7 +31,7 @@ public class FrameRoundtripTests
 
     var result = FrameReader.ReadFrame(ms);
     Assert.True(result.Success);
-    Assert.Empty(result.Payload);
+    Assert.True(result.Payload.IsEmpty);
   }
 
   [Fact]
@@ -48,7 +48,7 @@ public class FrameRoundtripTests
     Assert.True(result.Success);
     Assert.Equal(MsgType.Respond, result.Header.MsgType);
     Assert.Equal(corrId, result.Header.CorrelationId);
-    Assert.Equal(payload, result.Payload);
+    Assert.Equal(payload, result.Payload.ToArray());
   }
 
   [Theory]
@@ -84,7 +84,7 @@ public class FrameRoundtripTests
 
     var result = FrameReader.ReadFrame(ms);
     Assert.True(result.Success, $"Failed for {algo}: error {result.ErrorCode}");
-    Assert.Equal(payload, result.Payload);
+    Assert.Equal(payload, result.Payload.ToArray());
   }
 
   [Fact]
@@ -102,10 +102,10 @@ public class FrameRoundtripTests
 
     var result = FrameReader.ReadFrame(ms);
     Assert.True(result.Success);
-    Assert.Equal(payload, result.Payload);
-    Assert.Equal(2, result.UserHeaders.Count);
-    Assert.Equal(headers["Key1"], result.UserHeaders["Key1"]);
-    Assert.Equal(headers["Key2"], result.UserHeaders["Key2"]);
+    Assert.Equal(payload, result.Payload.ToArray());
+    Assert.Equal(2, result.DecodedUserHeaders!.Count);
+    Assert.Equal(headers["Key1"], result.DecodedUserHeaders["Key1"]);
+    Assert.Equal(headers["Key2"], result.DecodedUserHeaders["Key2"]);
   }
 
   [Fact]
@@ -119,7 +119,7 @@ public class FrameRoundtripTests
 
     var result = FrameReader.ReadFrame(ms);
     Assert.True(result.Success);
-    Assert.Equal(payload, result.Payload);
+    Assert.Equal(payload, result.Payload.ToArray());
   }
 
   [Fact]
@@ -205,12 +205,12 @@ public class FrameRoundtripTests
 
     var r1 = FrameReader.ReadFrame(ms);
     Assert.True(r1.Success);
-    Assert.Equal(new byte[] { 1 }, r1.Payload);
+    Assert.Equal(new byte[] { 1 }, r1.Payload.ToArray());
 
     var r2 = FrameReader.ReadFrame(ms);
     Assert.True(r2.Success);
     Assert.Equal(corrId1, r2.Header.CorrelationId);
-    Assert.Equal(new byte[] { 2, 3 }, r2.Payload);
+    Assert.Equal(new byte[] { 2, 3 }, r2.Payload.ToArray());
 
     var r3 = FrameReader.ReadFrame(ms);
     Assert.True(r3.Success);
@@ -231,8 +231,8 @@ public class FrameRoundtripTests
 
     var result = FrameReader.ReadFrame(ms);
     Assert.True(result.Success);
-    Assert.Equal(payload, result.Payload);
-    Assert.Equal(headers["trace-id"], result.UserHeaders["trace-id"]);
+    Assert.Equal(payload, result.Payload.ToArray());
+    Assert.Equal(headers["trace-id"], result.DecodedUserHeaders!["trace-id"]);
     Assert.Equal(corrId, result.Header.CorrelationId);
   }
 
@@ -248,7 +248,7 @@ public class FrameRoundtripTests
 
     var result = FrameReader.ReadFrame(ms);
     Assert.True(result.Success);
-    Assert.Equal(payload, result.Payload);
+    Assert.Equal(payload, result.Payload.ToArray());
   }
 
   [Theory]
@@ -267,7 +267,7 @@ public class FrameRoundtripTests
     var result = FrameReader.ReadFrame(ms);
     Assert.True(result.Success, $"Failed for {algo}: {result.ErrorCode}");
     Assert.Equal((uint)payload.Length, result.Header.UncompressedLen);
-    Assert.Equal(payload, result.Payload);
+    Assert.Equal(payload, result.Payload.ToArray());
   }
 
   [Fact]

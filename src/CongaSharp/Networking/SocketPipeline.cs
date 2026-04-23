@@ -141,6 +141,7 @@ public sealed class SocketPipeline : IAsyncDisposable
       while (!_cts.IsCancellationRequested) {
         var result = await AsyncFrameIO.ReadFrameAsync(_stream, _cts.Token).ConfigureAwait(false);
         if (!result.Success) {
+          result.Dispose();
           if (result.ErrorCode == Errors.ErrorCodes.SocketClosed) {
             EmitDisconnectEvents();
           } else {
@@ -159,8 +160,12 @@ public sealed class SocketPipeline : IAsyncDisposable
           CmdName = "", // resolved by the mode from its correlation map
           CorrelationId = result.Header.CorrelationId,
           Payload = result.Payload,
-          UserHeaders = result.UserHeaders ?? new Dictionary<string, byte[]>()
+          PayloadOwner = result.TakePayloadOwner(),
+          RawUserHeaders = result.RawUserHeaders
         };
+        // RawUserHeaders owner not tracked separately — small buffer, not pooled yet.
+        // Dispose the (now empty) result shell.
+        result.Dispose();
 
         var events = _mode.OnFrameReceived(_connectionName, frameData);
         foreach (var evt in events)

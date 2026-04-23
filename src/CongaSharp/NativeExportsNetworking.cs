@@ -145,13 +145,14 @@ public static partial class NativeExports
       int outHeadersCap,
       int* outHeadersLen)
   {
+    CongaEvent? evt = null;
     try {
       var root = HandleTable.Lookup(handle);
       if (root == null) return ErrorCodes.InvalidHandle;
 
       var filter = StringMarshaller.ReadFromPointer(name);
 
-      var evt = root.Events.Wait(filter, timeoutMs, root.ShutdownToken);
+      evt = root.Events.Wait(filter, timeoutMs, root.ShutdownToken);
 
       if (evt.Type == EventType.Timeout)
         return ErrorCodes.WaitTimeout;
@@ -185,6 +186,10 @@ public static partial class NativeExports
 
       return ErrorCodes.Success;
     } catch { return -1; }
+    finally {       // Ensure event is returned to pool on any exception
+     // Event fully consumed — return pooled buffers
+     evt?.Dispose();
+    }
   }
 
   [UnmanagedCallersOnly(EntryPoint = "conga_send")]
@@ -437,14 +442,14 @@ public static partial class NativeExports
   /// Writes byte data to an output buffer, truncating if capacity is insufficient.
   /// Always reports the actual data length via outLen.
   /// </summary>
-  private static unsafe void WriteBytesToBuffer(byte[] data, byte* buffer, int bufferCap, int* outLen)
+  private static unsafe void WriteBytesToBuffer(ReadOnlyMemory<byte> data, byte* buffer, int bufferCap, int* outLen)
   {
     if (outLen != null)
       *outLen = data.Length;
 
     if (buffer != null && bufferCap > 0 && data.Length > 0) {
       var copyLen = Math.Min(data.Length, bufferCap);
-      data.AsSpan(0, copyLen).CopyTo(new Span<byte>(buffer, copyLen));
+      data.Span[..copyLen].CopyTo(new Span<byte>(buffer, copyLen));
     }
   }
 
