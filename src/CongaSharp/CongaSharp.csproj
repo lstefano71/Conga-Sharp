@@ -15,6 +15,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="Dyalog.DWA.Kit" Version="0.1.0" />
     <PackageReference Include="K4os.Compression.LZ4" Version="1.*" />
     <PackageReference Include="ZstdSharp.Port" Version="0.*" />
   </ItemGroup>

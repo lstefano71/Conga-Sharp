@@ -1,14 +1,17 @@
- echoClt;i;c1;data;r1;t_;n;d
- CS.Bind
- ⎕←h←CS.Init''
- ⎕←CS.Clt h'C1' '127.0.0.1' 8080 'Command' 16384 5000  ⍝ create + connect client
- ⎕←t_←⎕AI[3]
+ echoClt;i;c1;data;r1;t_;n;d;h;evt;cname
+ CS.Bind ''
+ h←CS.Init''
+ cname←1⊃CS.Clt h '' '127.0.0.1' 8080 'Command'
+ ⎕←'Client: ',cname
+ t_←3⊃⎕AI
  :For i :In ⍳n←10000
      data←1(220⌶)d←⎕TS
-     c1←CS.Send h'C1'data
-     r1←CS.Wait h(2⊃c1)5000       ⍝ wait for next event
-     :if (100+d)≢0(220⌶)4⊃r1
-     ∘∘∘
-     :endif
+     c1←CS.Send h cname data
+     evt←CS.Wait h(1⊃c1)5000
+     :If (100+d)≢0(220⌶)3⊃evt
+         ⎕←'MISMATCH at iteration ',⍕i
+         ∘∘∘
+     :EndIf
  :EndFor
- ⎕←(⎕AI[3]-t_)÷n
+ ⎕←'Avg ms/roundtrip: ',⍕(3⊃⎕AI-t_)÷n
+ {}CS.Shutdown h

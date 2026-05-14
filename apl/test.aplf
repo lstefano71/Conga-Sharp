@@ -1,14 +1,15 @@
-test
-       CS.Bind
-       ⎕←h←CS.Init ''
-       ⎕←CS.Srv h'S1' '' 8080 'Command' 16384  ⍝ create + start server
-       ⎕←CS.Clt h 'C1' '127.0.0.1' 8080 'Command' 16384 5000  ⍝ create + connect client
-       ⎕←c1←CS.Send h 'C1' (1 2 3 4 5 6 7 8 9 10)
-       ⎕←c2←CS.Send h 'C1' (1 2 3 4 5 6 7 8 9 10 11 12)
-       ⎕←CS.Wait h '' 5000       ⍝ server connet
-       ⎕←r1←CS.Wait h '' 5000       ⍝ wait for next event
-       CS.Respond h (⊃r1) (1 2 3)
-       ⎕←r2←CS.Wait h '' 5000       ⍝ wait for next event
-       ⎕←CS.Respond h (⊃r2) (100+4⊃r2)
-       ⎕←CS.Wait h '' 5000       ⍝ wait for next event
-       ⎕←CS.Wait h '' 5000       ⍝ wait for next event
+test;h;evt;c1;c2;r1;r2
+ CS.Bind ''
+ h←CS.Init ''
+ ⎕←'Server: ',⍕1⊃CS.Srv h '' '' 8080 'Command'
+ ⎕←'Client: ',⍕1⊃CS.Clt h '' '127.0.0.1' 8080 'Command'
+ ⎕←c1←CS.Send h 'CLT00000000' (1(220⌶)1 2 3 4 5 6 7 8 9 10)
+ ⎕←c2←CS.Send h 'CLT00000000' (1(220⌶)1 2 3 4 5 6 7 8 9 10 11 12)
+ ⎕←'Connect: ',⍕CS.Wait h '.' 5000
+ ⎕←r1←CS.Wait h '.' 5000
+ {}CS.Respond h (1⊃r1) (1(220⌶)1 2 3)
+ ⎕←r2←CS.Wait h '.' 5000
+ {}CS.Respond h (1⊃r2) (1(220⌶)100+0(220⌶)3⊃r2)
+ ⎕←'Response1: ',⍕CS.Wait h '.' 5000
+ ⎕←'Response2: ',⍕CS.Wait h '.' 5000
+ {}CS.Shutdown h

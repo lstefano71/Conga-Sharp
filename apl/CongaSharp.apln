@@ -1,257 +1,241 @@
 :Namespace CS
-⍝ CongaSharp — APL Cover Functions
-⍝ Wraps the congasharp.dll native exports for convenient APL usage.
+⍝ CongaSharp — APL Cover Functions (DWA Kit)
+⍝ Wraps the congasharp.dll native exports using LOCALP (PP) parameters.
+⍝
+⍝ All functions match real Conga (DRC) result shapes where possible:
+⍝   Init      → handle (scalar)
+⍝   Srv       → (rc objName)
+⍝   Clt       → (rc objName) or (rc errName errMsg) on connect failure
+⍝   Wait      → (rc objName eventType data)
+⍝   Send      → (rc resolvedHandle)
+⍝   Respond   → rc (scalar)
+⍝   Progress  → rc (scalar)
+⍝   Close     → rc (scalar)
+⍝   Exists    → rc (scalar: 0=exists, 1002=not found)
+⍝   Names     → nested string vector
+⍝   SetProp   → rc (scalar)
+⍝   GetProp   → (rc value)
+⍝   Shutdown  → rc (scalar)
 ⍝
 ⍝ Usage:
-⍝   CS.Bind                  ⍝ Bind external names
-⍝   h←CS.Init ⍬              ⍝ initialise, returns handle
-⍝   CS.Srv h 'S1' '' 8080 'Command' 16384  ⍝ create + start server
-⍝   CS.Clt h 'C1' '127.0.0.1' 8080 'Command' 16384 5000  ⍝ create + connect client
-⍝   CS.Wait h '' 5000       ⍝ wait for next event
-⍝   CS.Send h 'C1' data     ⍝ send bytes (default compression)
-⍝   CS.SendEx h 'C1' data ⍬ 0 2 6  ⍝ send with headers/close/compression/level
-⍝   CS.Respond h 'S1.CON0001.Echo' data   ⍝ respond to command
-⍝   CS.RespondEx h 'S1.CON0001.Echo' data 3 10  ⍝ compressed response
-⍝   CS.Progress h 'S1.CON0001.Echo' data  ⍝ send interim progress
-⍝   CS.Close h 'S1'         ⍝ close an object
-⍝   CS.Shutdown h            ⍝ shutdown root
-⍝
-⍝ All functions return (rc result) where rc=0 means success.
+⍝   CS.Bind ''                               ⍝ Bind ⎕NA (pass DLL path or '' for default)
+⍝   h←CS.Init ⍬                              ⍝ Initialise, returns handle
+⍝   CS.Srv h '' '' 8080 'Command'            ⍝ Create + start server
+⍝   CS.Clt h '' '127.0.0.1' 8080 'Command'   ⍝ Create + connect client
+⍝   CS.Wait h '.' 5000                        ⍝ Wait for next event
+⍝   CS.Send h 'CLT00000000' data              ⍝ Send data
+⍝   CS.Respond h 'SRV0.CON0.Cmd' data         ⍝ Respond to command
+⍝   CS.Close h 'SRV00000000'                  ⍝ Close an object
+⍝   CS.Shutdown h                              ⍝ Shutdown root
 
-    ⎕IO←1 ⋄ ⎕ML←1
+    ⎕IO←0 ⋄ ⎕ML←1
 
-    ∇ path←DllPath
-    ⍝ Override this to point to your congasharp.dll location
+    ∇ path←DefaultDllPath
+    ⍝ Override this to point to your published congasharp.dll
       path←'C:\Users\stf\Source\Repos\Conga-Sharp\src\CongaSharp\bin\Release\net10.0\win-x64\publish\congasharp.dll'
     ∇
 
     ⍝ ── ⎕NA Declarations ──────────────────────────────────────
 
-    ∇ Bind
-    ⍝ Binds all ⎕NA declarations. Call once before using any CS function.
-      ⎕NA'I4 ',DllPath,'|conga_version >0T[] I4'
-      ⎕NA'I4 ',DllPath,'|conga_init >P'
-      ⎕NA'I4 ',DllPath,'|conga_shutdown P'
-      ⎕NA'I4 ',DllPath,'|conga_close P <0T'
-      ⎕NA'I4 ',DllPath,'|conga_setprop P <0T <0T <0T'
-      ⎕NA'I4 ',DllPath,'|conga_getprop P <0T <0T >0T[] I4 >I4'
-      ⎕NA'I4 ',DllPath,'|conga_tree P <0T >0T[] I4 >I4'
-      ⎕NA'I4 ',DllPath,'|conga_describe P <0T >0T[] I4 >I4'
-      ⎕NA'I4 ',DllPath,'|conga_names P <0T >0T[] I4 >I4'
-      ⎕NA'I4 ',DllPath,'|conga_srv_create P <0T <0T I4 <0T I4 >0T[] I4 >I4'
-      ⎕NA'I4 ',DllPath,'|conga_srv_start P <0T'
-      ⎕NA'I4 ',DllPath,'|conga_clt_create P <0T <0T I4 <0T I4 >0T[] I4 >I4'
-      ⎕NA'I4 ',DllPath,'|conga_clt_connect P <0T I4'
-      ⎕NA'I4 ',DllPath,'|conga_wait P <0T I4 >0T[] I4 >0T[] I4 >I4 >I1[] I4 >I4 >I1[] I4 >I4'
-      ⎕NA'I4 ',DllPath,'|conga_send P <0T <I1[] I4 <I1[] I4 I4 I4 I4 I4 >0T[] I4 >I4'
-      ⎕NA'I4 ',DllPath,'|conga_respond P <0T <I1[] I4 I4 I4'
-      ⎕NA'I4 ',DllPath,'|conga_progress P <0T <I1[] I4 I4 I4'
+    ∇ Bind dllPath;dll
+    ⍝ Bind all ⎕NA declarations. Call once before using any CS function.
+    ⍝ dllPath: full path to congasharp.dll, or '' to use DefaultDllPath
+      :If 0=≢dllPath ⋄ dll←DefaultDllPath ⋄ :Else ⋄ dll←dllPath ⋄ :EndIf
+      ⍝ Lifecycle
+      ⎕NA'P ',dll,'|conga_pp_init'
+      ⎕NA'I4 ',dll,'|conga_pp_shutdown P'
+      ⎕NA dll,'|conga_pp_version >PP'
+      ⍝ Server
+      ⎕NA dll,'|conga_pp_srv_create P <PP <PP I4 <PP I4 >PP'
+      ⎕NA'I4 ',dll,'|conga_pp_srv_start P <PP'
+      ⍝ Client
+      ⎕NA dll,'|conga_pp_clt_create P <PP <PP I4 <PP I4 >PP'
+      ⎕NA'I4 ',dll,'|conga_pp_clt_connect P <PP I4'
+      ⍝ Events
+      ⎕NA dll,'|conga_pp_wait P <PP I4 >PP'
+      ⍝ Data
+      ⎕NA dll,'|conga_pp_send P <PP <PP I4 I4 I4 >PP'
+      ⎕NA'I4 ',dll,'|conga_pp_respond P <PP <PP I4'
+      ⎕NA'I4 ',dll,'|conga_pp_progress P <PP <PP I4'
+      ⍝ Management
+      ⎕NA'I4 ',dll,'|conga_pp_close P <PP'
+      ⎕NA'I4 ',dll,'|conga_pp_exists P <PP'
+      ⎕NA dll,'|conga_pp_names P <PP >PP'
+      ⎕NA'I4 ',dll,'|conga_pp_setprop P <PP <PP <PP'
+      ⎕NA'I4 ',dll,'|conga_pp_getprop P <PP <PP >PP'
     ∇
 
-    ⍝ ── Error Handling ────────────────────────────────────────
-
-    ∇ r←Check args;rc;result
-    ⍝ Check return code. If non-zero and not WaitTimeout, ⎕SIGNAL.
-      rc result←(1↑args)(1↓args)
-      :If rc=0
-          r←result
-      :ElseIf rc=1  ⍝ WaitTimeout — not an error, just no event
-          r←'Timeout' 8 ⍬ ⍬  ⍝ return timeout pseudo-event
-      :Else
-          ⎕SIGNAL⊂('EN' 11)('EM'('CongaSharp error: ',⍕rc))
-      :EndIf
-    ∇
-
-    ⍝ ── Core Functions ────────────────────────────────────────
-
-    ∇ r←Version
-    ⍝ Returns the library version string.
-      r←Check conga_version 256 256
-    ∇
+    ⍝ ── Lifecycle ─────────────────────────────────────────────
 
     ∇ r←Init dummy
-    ⍝ Initialise a new CongaSharp root. Returns the handle.
-      r←Check conga_init 0
+    ⍝ Initialise a new CongaSharp root. Returns the opaque handle.
+      r←conga_pp_init
     ∇
 
     ∇ r←Shutdown h
-    ⍝ Shutdown a root: closes all connections, unblocks waiters.
-      r←conga_shutdown h
+    ⍝ Shutdown a root: closes all objects, releases resources.
+    ⍝ Returns: rc (0=success)
+      r←conga_pp_shutdown h
     ∇
 
-    ∇ r←Close(h name)
-    ⍝ Close a specific object (server, client, connection, command).
-      r←conga_close h name
+    ∇ r←Version
+    ⍝ Returns the library version string.
+      r←conga_pp_version 0
     ∇
 
-    ⍝ ── Property Functions ────────────────────────────────────
+    ⍝ ── Server ────────────────────────────────────────────────
 
-    ∇ r←SetProp(h obj prop value)
-    ⍝ Set a property. value should be a JSON string.
-      r←conga_setprop h obj prop value
-    ∇
-
-    ∇ r←GetProp(h obj prop)
-    ⍝ Get a property. Returns parsed JSON value.
-    ⍝ Result: (rc jsonString actualLen)
-      :If 0=1⊃r←conga_getprop h obj prop(4096⌈0)4096 0
-          r←⎕JSON⊃1↓r  ⍝ parse JSON, return value
+    ∇ r←Srv args;h;name;addr;port;mode;buf;rc
+    ⍝ Create and start a server (3-phase: create → start).
+    ⍝ args: h name addr port mode [bufSize]
+    ⍝ Returns: (0 objName) on success, (errcode '') on failure
+      (h name addr port mode)←5↑args
+      buf←(5⊃args,16384)
+      r←conga_pp_srv_create h name addr port mode buf 0
+      :If 0=⊃r
+          rc←conga_pp_srv_start h(1⊃r)
+          :If rc≠0
+              {}conga_pp_close h(1⊃r)
+              r←rc ''
+          :EndIf
       :EndIf
     ∇
 
-    ⍝ ── Query Functions ───────────────────────────────────────
-
-    ∇ r←Tree(h obj)
-    ⍝ Returns the object hierarchy as parsed JSON.
-      :If 0=1⊃r←conga_tree h obj(65536⌈0)65536 0
-          r←⎕JSON⊃1↓r
-      :EndIf
-    ∇
-
-    ∇ r←Describe(h obj)
-    ⍝ Returns all properties of an object as parsed JSON.
-      :If 0=1⊃r←conga_describe h obj(65536⌈0)65536 0
-          r←⎕JSON⊃1↓r
-      :EndIf
-    ∇
-
-    ∇ r←Names(h obj)
-    ⍝ Returns child names as parsed JSON array.
-      :If 0=1⊃r←conga_names h obj(65536⌈0)65536 0
-          r←⎕JSON⊃1↓r
-      :EndIf
-    ∇
-
-    ⍝ ── Server Functions ──────────────────────────────────────
-
-    ∇ r←Srv(h name addr port mode bufSize);rc;sName;props
-    ⍝ Three-phase server creation: create → configure → start.
-    ⍝ h     = root handle
-    ⍝ name  = requested name ('' for auto)
-    ⍝ addr  = bind address ('' for all interfaces)
-    ⍝ port  = port number (0 for ephemeral)
-    ⍝ mode  = 'Command' 'Text' 'Raw' 'BlkText' 'BlkRaw'
-    ⍝ bufSize = receive buffer size
-    ⍝ Returns: assigned server name
-      rc sName←2↑conga_srv_create h name addr port mode bufSize(256⌈0)256 0
-      :If rc≠0 ⋄ ⎕SIGNAL⊂('EN' 11)('EM'('srv_create failed: ',⍕rc)) ⋄ :EndIf
-     
-      ⍝ Phase 3: Start
-      rc←conga_srv_start h sName
-      :If rc≠0 ⋄ ⎕SIGNAL⊂('EN' 11)('EM'('srv_start failed: ',⍕rc)) ⋄ :EndIf
-     
-      r←sName
-    ∇
-
-    ∇ r←SrvCreate(h name addr port mode bufSize)
-    ⍝ Phase 1 only: create server without starting. Returns assigned name.
-      r←Check conga_srv_create h name addr port mode bufSize(256⌈0)256 0
-      r←⊃r
+    ∇ r←SrvCreate args;h;name;addr;port;mode;buf
+    ⍝ Phase 1 only: create server without starting.
+    ⍝ args: h name addr port mode [bufSize]
+    ⍝ Returns: (rc objName)
+      (h name addr port mode)←5↑args
+      buf←(5⊃args,16384)
+      r←conga_pp_srv_create h name addr port mode buf 0
     ∇
 
     ∇ r←SrvStart(h name)
     ⍝ Phase 3: start a previously created server.
-      r←conga_srv_start h name
+    ⍝ Returns: rc
+      r←conga_pp_srv_start h name
     ∇
 
-    ⍝ ── Client Functions ──────────────────────────────────────
+    ⍝ ── Client ────────────────────────────────────────────────
 
-    ∇ r←Clt(h name addr port mode bufSize timeout);rc;cName
-    ⍝ Three-phase client: create → configure → connect.
-    ⍝ timeout = connect timeout in milliseconds
-    ⍝ Returns: assigned client name
-      rc cName←2↑conga_clt_create h name addr port mode bufSize(256⌈0)256 0
-      :If rc≠0 ⋄ ⎕SIGNAL⊂('EN' 11)('EM'('clt_create failed: ',⍕rc)) ⋄ :EndIf
-     
-      ⍝ Phase 3: Connect
-      rc←conga_clt_connect h cName timeout
-      :If rc≠0 ⋄ ⎕SIGNAL⊂('EN' 11)('EM'('clt_connect failed: ',⍕rc)) ⋄ :EndIf
-     
-      r←cName
+    ∇ r←Clt args;h;name;addr;port;mode;buf;timeout;rc
+    ⍝ Create and connect a client (3-phase: create → connect).
+    ⍝ args: h name addr port mode [bufSize [timeout]]
+    ⍝ Returns: (0 objName) on success, (errcode '') on failure
+      (h name addr port mode)←5↑args
+      buf←(5⊃args,16384)
+      timeout←(6⊃args,5000)
+      r←conga_pp_clt_create h name addr port mode buf 0
+      :If 0=⊃r
+          rc←conga_pp_clt_connect h(1⊃r)timeout
+          :If rc≠0
+              {}conga_pp_close h(1⊃r)
+              r←rc ''
+          :EndIf
+      :EndIf
     ∇
 
-    ∇ r←CltCreate(h name addr port mode bufSize)
-    ⍝ Phase 1 only: create client without connecting. Returns assigned name.
-      r←Check conga_clt_create h name addr port mode bufSize(256⌈0)256 0
-      r←⊃r
+    ∇ r←CltCreate args;h;name;addr;port;mode;buf
+    ⍝ Phase 1 only: create client without connecting.
+    ⍝ args: h name addr port mode [bufSize]
+    ⍝ Returns: (rc objName)
+      (h name addr port mode)←5↑args
+      buf←(5⊃args,16384)
+      r←conga_pp_clt_create h name addr port mode buf 0
     ∇
 
     ∇ r←CltConnect(h name timeout)
     ⍝ Phase 3: connect a previously created client.
-      r←conga_clt_connect h name timeout
+    ⍝ Returns: rc
+      r←conga_pp_clt_connect h name timeout
     ∇
 
-    ⍝ ── Communication Functions ───────────────────────────────
+    ⍝ ── Events ────────────────────────────────────────────────
 
-    ∇ r←Wait(h name timeout);rc;obj;evt;code;data;dataLen;hdrs;hdrsLen
-    ⍝ Wait for an event. Returns: (objectName eventName eventCode payload userHeaders)
-    ⍝ name    = object filter ('' or '.' for all)
-    ⍝ timeout = milliseconds
-      rc obj evt code data dataLen hdrs hdrsLen←conga_wait h name timeout 256 256 64 64 0 512 512 0 128 128  0
-      :If rc=0
-          data←dataLen↑data     ⍝ trim to actual length
-          hdrs←hdrsLen↑hdrs     ⍝ trim to actual length
-          r←obj evt code data hdrs
-      :ElseIf rc=1  ⍝ WaitTimeout
-          r←'' 'Timeout' 8 ⍬ ⍬
-      :Else
-          ⎕SIGNAL⊂('EN' 11)('EM'('conga_wait failed: ',⍕rc))
-      :EndIf
+    ∇ r←Wait(h name timeout)
+    ⍝ Wait for the next event.
+    ⍝ Returns: (rc objName eventType data)
+    ⍝   Timeout:    (0 '.' 'Timeout' 100)
+    ⍝   Receive:    (0 'SRV0.CON0' 'Receive' byteData)
+    ⍝   Connect:    (0 'SRV0.CON0' 'Connect' '')
+    ⍝   Closed:     (0 'SRV0.CON0' 'Closed' 1119)
+      r←conga_pp_wait h name timeout 0
     ∇
 
-    ∇ r←Send(h name data);closeFlag;hdrs;rc;outName;trackFlag
-    ⍝ Send data on a connection. Returns (rc resolvedHandle).
-    ⍝ In Command mode with a client name, auto-generates a command handle.
-    ⍝ data must be a byte vector (⎕DR 83).
-      closeFlag←0 ⋄ hdrs←⍬
-      trackFlag←0
-      rc outName←2↑conga_send h name data(≢data)hdrs(≢hdrs)closeFlag 0 0 trackFlag 256 256 0
-      r←rc outName
+    ⍝ ── Data ──────────────────────────────────────────────────
+
+    ∇ r←Send(h name data)
+    ⍝ Send data on a connection.
+    ⍝ data must be a byte vector (use 1(220⌶)value to convert).
+    ⍝ Returns: (rc resolvedHandle)
+      r←conga_pp_send h name data 0 0 0 0
     ∇
 
-    ∇ r←SendTracked(h name data);closeFlag;hdrs;rc;outName;trackFlag
-    ⍝ Send data with mailbox tracking (track=1). Race-safe for concurrent Wait patterns.
-    ⍝ The response is routed to a per-command mailbox, preventing broad waiters from
-    ⍝ stealing it. Pair with a specific Wait on the returned handle.
-    ⍝ Returns (rc resolvedHandle).
-      closeFlag←0 ⋄ hdrs←⍬
-      trackFlag←1
-      rc outName←2↑conga_send h name data(≢data)hdrs(≢hdrs)closeFlag 0 0 trackFlag 256 256 0
-      r←rc outName
-    ∇
-
-    ∇ r←SendEx(h name data hdrs closeFlag compression compressionLevel);rc;outName
-    ⍝ Extended send with headers, close flag, and per-message compression settings.
-    ⍝ Returns (rc resolvedHandle).
-      rc outName←2↑conga_send h name data(≢data)hdrs(≢hdrs)closeFlag compression compressionLevel 0 256 256 0
-      r←rc outName
-    ∇
-
-    ∇ r←SendExTracked(h name data hdrs closeFlag compression compressionLevel);rc;outName
-    ⍝ Extended send with tracking (track=1). Race-safe for concurrent Wait patterns.
-    ⍝ Returns (rc resolvedHandle).
-      rc outName←2↑conga_send h name data(≢data)hdrs(≢hdrs)closeFlag compression compressionLevel 1 256 256 0
-      r←rc outName
+    ∇ r←SendEx(h name data closeFlag compression track)
+    ⍝ Extended send with close flag, compression, and tracking.
+    ⍝ closeFlag: 0=none, 1=close connection, 2=close command
+    ⍝ compression: 0=none, 1=Deflate, 2=LZ4, 3=Zstd
+    ⍝ track: 0=no mailbox, 1=register mailbox for response routing
+    ⍝ Returns: (rc resolvedHandle)
+      r←conga_pp_send h name data closeFlag compression track 0
     ∇
 
     ∇ r←Respond(h name data)
-    ⍝ Send final response for a command (closes the command).
-      r←conga_respond h name data(≢data)0 0
+    ⍝ Send final response for a command (server-side).
+    ⍝ Returns: rc
+      r←conga_pp_respond h name data 0
     ∇
 
-    ∇ r←RespondEx(h name data compression compressionLevel)
-    ⍝ Extended respond with per-message compression settings.
-      r←conga_respond h name data(≢data)compression compressionLevel
+    ∇ r←RespondEx(h name data compression)
+    ⍝ Respond with compression.
+    ⍝ Returns: rc
+      r←conga_pp_respond h name data compression
     ∇
 
     ∇ r←Progress(h name data)
-    ⍝ Send interim progress message for a command.
-      r←conga_progress h name data(≢data)0 0
+    ⍝ Send interim progress message for a command (server-side).
+    ⍝ Returns: rc
+      r←conga_pp_progress h name data 0
     ∇
 
-    ∇ r←ProgressEx(h name data compression compressionLevel)
-    ⍝ Extended progress with per-message compression settings.
-      r←conga_progress h name data(≢data)compression compressionLevel
+    ∇ r←ProgressEx(h name data compression)
+    ⍝ Progress with compression.
+    ⍝ Returns: rc
+      r←conga_pp_progress h name data compression
+    ∇
+
+    ⍝ ── Management ────────────────────────────────────────────
+
+    ∇ r←Close(h name)
+    ⍝ Close a named object and all its children.
+    ⍝ Returns: rc (0=success, 1002=not found)
+      r←conga_pp_close h name
+    ∇
+
+    ∇ r←Exists(h name)
+    ⍝ Check if a name exists in the registry.
+    ⍝ Returns: rc (0=exists, 1002=not found)
+      r←conga_pp_exists h name
+    ∇
+
+    ∇ r←Names(h obj)
+    ⍝ Get child names of an object.
+    ⍝ Returns: nested string vector
+      r←conga_pp_names h obj 0
+    ∇
+
+    ⍝ ── Properties ────────────────────────────────────────────
+
+    ∇ r←SetProp(h obj prop value)
+    ⍝ Set a property. value should be a JSON string (e.g., '"hello"', '42', '[1,2]').
+    ⍝ Returns: rc
+      r←conga_pp_setprop h obj prop value
+    ∇
+
+    ∇ r←GetProp(h obj prop)
+    ⍝ Get a property value.
+    ⍝ Returns: (rc jsonString)
+      r←conga_pp_getprop h obj prop 0
     ∇
 
 :EndNamespace

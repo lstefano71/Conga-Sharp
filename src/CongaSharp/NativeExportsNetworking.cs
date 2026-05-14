@@ -488,7 +488,7 @@ public static partial class NativeExports
   /// Parses a dotted command name ("CONN.CmdName") and resolves to the parent
   /// connection's pipeline.
   /// </summary>
-  private static (SocketPipeline? pipeline, string connName, string? cmdName, int errorCode)
+  internal static (SocketPipeline? pipeline, string connName, string? cmdName, int errorCode)
       ResolvePipelineForCommand(Root root, string name)
   {
     var lastDot = name.LastIndexOf('.');
@@ -512,7 +512,7 @@ public static partial class NativeExports
   /// <summary>
   /// Executes post-send actions: close connection, close command, or emit Sent event.
   /// </summary>
-  private static void HandlePostAction(Root root, string objectName, string connName, PostSendAction action)
+  internal static void HandlePostAction(Root root, string objectName, string connName, PostSendAction action)
   {
     switch (action) {
       case PostSendAction.CloseConnection:
@@ -533,7 +533,7 @@ public static partial class NativeExports
   /// <summary>
   /// Disposes a connection's pipeline and removes it (and children) from the registry.
   /// </summary>
-  private static void DisposeAndRemoveConnection(Root root, string connName)
+  internal static void DisposeAndRemoveConnection(Root root, string connName)
   {
     var obj = root.Registry.Lookup(connName);
     if (obj is ConnectionObject conn && conn.Pipeline != null) {
