@@ -38,7 +38,7 @@ public class NetworkingIntegrationTests : IAsyncLifetime
   [Fact]
   public async Task ServerStartsOnEphemeralPort()
   {
-    var server = new ServerObject("S1", "127.0.0.1", 0, "Raw", 4096);
+    var server = new ServerObject("SRV00000000", "127.0.0.1", 0, "Raw", 4096);
     _root.Registry.TryAdd(server);
 
     var result = server.Start(_root);
@@ -52,7 +52,7 @@ public class NetworkingIntegrationTests : IAsyncLifetime
   [Fact]
   public async Task ServerStartTwiceReturnsAlreadyStarted()
   {
-    var server = new ServerObject("S1", "127.0.0.1", 0, "Raw", 4096);
+    var server = new ServerObject("SRV00000000", "127.0.0.1", 0, "Raw", 4096);
     _root.Registry.TryAdd(server);
 
     Assert.Equal(ErrorCodes.Success, server.Start(_root));
@@ -64,11 +64,11 @@ public class NetworkingIntegrationTests : IAsyncLifetime
   [Fact]
   public async Task ClientConnectsToServer_RawMode()
   {
-    var server = new ServerObject("S1", "127.0.0.1", 0, "Raw", 4096);
+    var server = new ServerObject("SRV00000000", "127.0.0.1", 0, "Raw", 4096);
     _root.Registry.TryAdd(server);
     server.Start(_root);
 
-    var client = new ClientObject("C1", "127.0.0.1", server.LocalPort, "Raw", 4096);
+    var client = new ClientObject("CLT00000000", "127.0.0.1", server.LocalPort, "Raw", 4096);
     _root.Registry.TryAdd(client);
 
     var connectResult = await client.ConnectAsync(_root, 5000);
@@ -76,9 +76,9 @@ public class NetworkingIntegrationTests : IAsyncLifetime
     Assert.Equal(ObjectState.Started, client.State);
 
     // Wait for Connect event from the server side
-    var evt = _root.Events.Wait("S1", 5000, _root.ShutdownToken);
+    var evt = _root.Events.Wait("SRV00000000", 5000, _root.ShutdownToken);
     Assert.Equal(EventType.Connect, evt.Type);
-    Assert.StartsWith("S1.CON", evt.ObjectName);
+    Assert.StartsWith("SRV00000000.CON", evt.ObjectName);
 
     await client.DisposeAsync();
     await server.DisposeAsync();
@@ -87,12 +87,12 @@ public class NetworkingIntegrationTests : IAsyncLifetime
   [Fact]
   public async Task ServerAcceptsMultipleClients()
   {
-    var server = new ServerObject("S1", "127.0.0.1", 0, "Raw", 4096);
+    var server = new ServerObject("SRV00000000", "127.0.0.1", 0, "Raw", 4096);
     _root.Registry.TryAdd(server);
     server.Start(_root);
 
-    var client1 = new ClientObject("C1", "127.0.0.1", server.LocalPort, "Raw", 4096);
-    var client2 = new ClientObject("C2", "127.0.0.1", server.LocalPort, "Raw", 4096);
+    var client1 = new ClientObject("CLT00000000", "127.0.0.1", server.LocalPort, "Raw", 4096);
+    var client2 = new ClientObject("CLT00000001", "127.0.0.1", server.LocalPort, "Raw", 4096);
     _root.Registry.TryAdd(client1);
     _root.Registry.TryAdd(client2);
 
@@ -100,8 +100,8 @@ public class NetworkingIntegrationTests : IAsyncLifetime
     Assert.Equal(ErrorCodes.Success, await client2.ConnectAsync(_root, 5000));
 
     // Should get two Connect events
-    var evt1 = _root.Events.Wait("S1", 5000, _root.ShutdownToken);
-    var evt2 = _root.Events.Wait("S1", 5000, _root.ShutdownToken);
+    var evt1 = _root.Events.Wait("SRV00000000", 5000, _root.ShutdownToken);
+    var evt2 = _root.Events.Wait("SRV00000000", 5000, _root.ShutdownToken);
     Assert.Equal(EventType.Connect, evt1.Type);
     Assert.Equal(EventType.Connect, evt2.Type);
     Assert.NotEqual(evt1.ObjectName, evt2.ObjectName);
@@ -114,16 +114,16 @@ public class NetworkingIntegrationTests : IAsyncLifetime
   [Fact]
   public async Task RawMode_SendAndReceive()
   {
-    var server = new ServerObject("S1", "127.0.0.1", 0, "Raw", 4096);
+    var server = new ServerObject("SRV00000000", "127.0.0.1", 0, "Raw", 4096);
     _root.Registry.TryAdd(server);
     server.Start(_root);
 
-    var client = new ClientObject("C1", "127.0.0.1", server.LocalPort, "Raw", 4096);
+    var client = new ClientObject("CLT00000000", "127.0.0.1", server.LocalPort, "Raw", 4096);
     _root.Registry.TryAdd(client);
     await client.ConnectAsync(_root, 5000);
 
     // Wait for Connect to get the connection name
-    var connectEvt = _root.Events.Wait("S1", 5000, _root.ShutdownToken);
+    var connectEvt = _root.Events.Wait("SRV00000000", 5000, _root.ShutdownToken);
     Assert.Equal(EventType.Connect, connectEvt.Type);
     var connName = connectEvt.ObjectName;
 
@@ -149,7 +149,7 @@ public class NetworkingIntegrationTests : IAsyncLifetime
     await connObj.Pipeline!.SendAsync(replyMsg);
 
     // Client should receive it
-    var clientRecvEvt = _root.Events.Wait("C1", 5000, _root.ShutdownToken);
+    var clientRecvEvt = _root.Events.Wait("CLT00000000", 5000, _root.ShutdownToken);
     Assert.Equal(EventType.Receive, clientRecvEvt.Type);
     Assert.Equal(replyData, clientRecvEvt.Payload);
 
@@ -160,25 +160,25 @@ public class NetworkingIntegrationTests : IAsyncLifetime
   [Fact]
   public async Task TextMode_SendWithEom()
   {
-    var server = new ServerObject("S1", "127.0.0.1", 0, "Text", 4096);
+    var server = new ServerObject("SRV00000000", "127.0.0.1", 0, "Text", 4096);
     _root.Registry.TryAdd(server);
     // Configure EOM = CRLF
     server.Properties.Set("EOM", "[[13,10]]");
     server.Start(_root);
 
-    var client = new ClientObject("C1", "127.0.0.1", server.LocalPort, "Text", 4096);
+    var client = new ClientObject("CLT00000000", "127.0.0.1", server.LocalPort, "Text", 4096);
     _root.Registry.TryAdd(client);
     client.Properties.Set("EOM", "[[13,10]]");
     await client.ConnectAsync(_root, 5000);
 
-    var connectEvt = _root.Events.Wait("S1", 5000, _root.ShutdownToken);
+    var connectEvt = _root.Events.Wait("SRV00000000", 5000, _root.ShutdownToken);
     Assert.Equal(EventType.Connect, connectEvt.Type);
     var connName = connectEvt.ObjectName;
 
     // Send a message with CRLF EOM from client
     var message = System.Text.Encoding.UTF8.GetBytes("Hello\r\n");
     var mode = new TextMode();
-    var outMsg = mode.PrepareOutbound("C1", message, null, PostSendAction.None, null);
+    var outMsg = mode.PrepareOutbound("CLT00000000", message, null, PostSendAction.None, null);
     await client.Pipeline!.SendAsync(outMsg);
 
     // Server receives the message (including EOM bytes)
@@ -193,22 +193,22 @@ public class NetworkingIntegrationTests : IAsyncLifetime
   [Fact]
   public async Task BlkRawMode_SendFrameAndReceiveBlockEvent()
   {
-    var server = new ServerObject("S1", "127.0.0.1", 0, "BlkRaw", 4096);
+    var server = new ServerObject("SRV00000000", "127.0.0.1", 0, "BlkRaw", 4096);
     _root.Registry.TryAdd(server);
     server.Start(_root);
 
-    var client = new ClientObject("C1", "127.0.0.1", server.LocalPort, "BlkRaw", 4096);
+    var client = new ClientObject("CLT00000000", "127.0.0.1", server.LocalPort, "BlkRaw", 4096);
     _root.Registry.TryAdd(client);
     await client.ConnectAsync(_root, 5000);
 
-    var connectEvt = _root.Events.Wait("S1", 5000, _root.ShutdownToken);
+    var connectEvt = _root.Events.Wait("SRV00000000", 5000, _root.ShutdownToken);
     Assert.Equal(EventType.Connect, connectEvt.Type);
     var connName = connectEvt.ObjectName;
 
     // Client sends framed data
     var testData = "Framed payload"u8.ToArray();
     var mode = new BlkRawMode();
-    var outMsg = mode.PrepareOutbound("C1", testData, null, PostSendAction.None, null);
+    var outMsg = mode.PrepareOutbound("CLT00000000", testData, null, PostSendAction.None, null);
     await client.Pipeline!.SendAsync(outMsg);
 
     // Server receives Block event
@@ -223,22 +223,22 @@ public class NetworkingIntegrationTests : IAsyncLifetime
   [Fact]
   public async Task CommandMode_SendAndReceive()
   {
-    var server = new ServerObject("S1", "127.0.0.1", 0, "Command", 4096);
+    var server = new ServerObject("SRV00000000", "127.0.0.1", 0, "Command", 4096);
     _root.Registry.TryAdd(server);
     server.Start(_root);
 
-    var client = new ClientObject("C1", "127.0.0.1", server.LocalPort, "Command", 4096);
+    var client = new ClientObject("CLT00000000", "127.0.0.1", server.LocalPort, "Command", 4096);
     _root.Registry.TryAdd(client);
     await client.ConnectAsync(_root, 5000);
 
-    var connectEvt = _root.Events.Wait("S1", 5000, _root.ShutdownToken);
+    var connectEvt = _root.Events.Wait("SRV00000000", 5000, _root.ShutdownToken);
     Assert.Equal(EventType.Connect, connectEvt.Type);
     var connName = connectEvt.ObjectName;
 
     // Client sends a command
     var cmdPayload = "echo test"u8.ToArray();
     var clientMode = (CommandMode)client.Pipeline!.Mode;
-    var outMsg = clientMode.PrepareOutbound("C1", cmdPayload, null, PostSendAction.None, "MyCmd");
+    var outMsg = clientMode.PrepareOutbound("CLT00000000", cmdPayload, null, PostSendAction.None, "MyCmd");
     await client.Pipeline!.SendAsync(outMsg);
 
     // Server receives command on connection.<auto-generated-name>
@@ -259,7 +259,7 @@ public class NetworkingIntegrationTests : IAsyncLifetime
     await connObj.Pipeline!.SendAsync(respondMsg);
 
     // Client receives response
-    var respEvt = _root.Events.Wait("C1", 5000, _root.ShutdownToken);
+    var respEvt = _root.Events.Wait("CLT00000000", 5000, _root.ShutdownToken);
     Assert.Equal(EventType.Receive, respEvt.Type);
     Assert.Equal(responsePayload, respEvt.Payload);
 
@@ -270,15 +270,15 @@ public class NetworkingIntegrationTests : IAsyncLifetime
   [Fact]
   public async Task ConnectionCloseEmitsClosedEvent()
   {
-    var server = new ServerObject("S1", "127.0.0.1", 0, "Raw", 4096);
+    var server = new ServerObject("SRV00000000", "127.0.0.1", 0, "Raw", 4096);
     _root.Registry.TryAdd(server);
     server.Start(_root);
 
-    var client = new ClientObject("C1", "127.0.0.1", server.LocalPort, "Raw", 4096);
+    var client = new ClientObject("CLT00000000", "127.0.0.1", server.LocalPort, "Raw", 4096);
     _root.Registry.TryAdd(client);
     await client.ConnectAsync(_root, 5000);
 
-    var connectEvt = _root.Events.Wait("S1", 5000, _root.ShutdownToken);
+    var connectEvt = _root.Events.Wait("SRV00000000", 5000, _root.ShutdownToken);
     Assert.Equal(EventType.Connect, connectEvt.Type);
     var connName = connectEvt.ObjectName;
 
@@ -297,7 +297,7 @@ public class NetworkingIntegrationTests : IAsyncLifetime
   {
     // Connect to a non-routable address — should time out
     // Use a port on localhost that nobody is listening on
-    var client = new ClientObject("C1", "192.0.2.1", 9999, "Raw", 4096);
+    var client = new ClientObject("CLT00000000", "192.0.2.1", 9999, "Raw", 4096);
     _root.Registry.TryAdd(client);
 
     var result = await client.ConnectAsync(_root, 500);
@@ -311,15 +311,15 @@ public class NetworkingIntegrationTests : IAsyncLifetime
   [Fact]
   public async Task ShutdownClosesEverything()
   {
-    var server = new ServerObject("S1", "127.0.0.1", 0, "Raw", 4096);
+    var server = new ServerObject("SRV00000000", "127.0.0.1", 0, "Raw", 4096);
     _root.Registry.TryAdd(server);
     server.Start(_root);
 
-    var client = new ClientObject("C1", "127.0.0.1", server.LocalPort, "Raw", 4096);
+    var client = new ClientObject("CLT00000000", "127.0.0.1", server.LocalPort, "Raw", 4096);
     _root.Registry.TryAdd(client);
     await client.ConnectAsync(_root, 5000);
 
-    var connectEvt = _root.Events.Wait("S1", 5000, _root.ShutdownToken);
+    var connectEvt = _root.Events.Wait("SRV00000000", 5000, _root.ShutdownToken);
     Assert.Equal(EventType.Connect, connectEvt.Type);
 
     // Shutdown the root — should stop all operations
@@ -350,21 +350,21 @@ public class NetworkingIntegrationTests : IAsyncLifetime
   [Fact]
   public async Task BlkRawMode_BidirectionalFrames()
   {
-    var server = new ServerObject("S1", "127.0.0.1", 0, "BlkRaw", 4096);
+    var server = new ServerObject("SRV00000000", "127.0.0.1", 0, "BlkRaw", 4096);
     _root.Registry.TryAdd(server);
     server.Start(_root);
 
-    var client = new ClientObject("C1", "127.0.0.1", server.LocalPort, "BlkRaw", 4096);
+    var client = new ClientObject("CLT00000000", "127.0.0.1", server.LocalPort, "BlkRaw", 4096);
     _root.Registry.TryAdd(client);
     await client.ConnectAsync(_root, 5000);
 
-    var connectEvt = _root.Events.Wait("S1", 5000, _root.ShutdownToken);
+    var connectEvt = _root.Events.Wait("SRV00000000", 5000, _root.ShutdownToken);
     var connName = connectEvt.ObjectName;
 
     // Client sends frame
     var outData = "client data"u8.ToArray();
     var mode = new BlkRawMode();
-    var outMsg = mode.PrepareOutbound("C1", outData, null, PostSendAction.None, null);
+    var outMsg = mode.PrepareOutbound("CLT00000000", outData, null, PostSendAction.None, null);
     await client.Pipeline!.SendAsync(outMsg);
 
     // Server receives
@@ -380,7 +380,7 @@ public class NetworkingIntegrationTests : IAsyncLifetime
     await connObj.Pipeline!.SendAsync(replyMsg);
 
     // Client receives
-    var clientRecvEvt = _root.Events.Wait("C1", 5000, _root.ShutdownToken);
+    var clientRecvEvt = _root.Events.Wait("CLT00000000", 5000, _root.ShutdownToken);
     Assert.Equal(EventType.Block, clientRecvEvt.Type);
     Assert.Equal(replyData, clientRecvEvt.Payload);
 
@@ -391,7 +391,7 @@ public class NetworkingIntegrationTests : IAsyncLifetime
   [Fact]
   public async Task ServerLocalPortProperty_IsSetAfterStart()
   {
-    var server = new ServerObject("S1", "127.0.0.1", 0, "Raw", 4096);
+    var server = new ServerObject("SRV00000000", "127.0.0.1", 0, "Raw", 4096);
     _root.Registry.TryAdd(server);
     server.Start(_root);
 
@@ -411,16 +411,16 @@ public class NetworkingIntegrationTests : IAsyncLifetime
   [Fact]
   public async Task ClientPeerAddr_IsSetAfterConnect()
   {
-    var server = new ServerObject("S1", "127.0.0.1", 0, "Raw", 4096);
+    var server = new ServerObject("SRV00000000", "127.0.0.1", 0, "Raw", 4096);
     _root.Registry.TryAdd(server);
     server.Start(_root);
 
-    var client = new ClientObject("C1", "127.0.0.1", server.LocalPort, "Raw", 4096);
+    var client = new ClientObject("CLT00000000", "127.0.0.1", server.LocalPort, "Raw", 4096);
     _root.Registry.TryAdd(client);
     await client.ConnectAsync(_root, 5000);
 
     // Drain connect event
-    _root.Events.Wait("S1", 5000, _root.ShutdownToken);
+    _root.Events.Wait("SRV00000000", 5000, _root.ShutdownToken);
 
     // PeerAddr should be set (not defined for Client in PropertyDefinitions currently,
     // but SetInternal bypasses checks — verify via the internal store)
@@ -435,22 +435,22 @@ public class NetworkingIntegrationTests : IAsyncLifetime
   [Fact]
   public async Task RawMode_LargePayload()
   {
-    var server = new ServerObject("S1", "127.0.0.1", 0, "Raw", 65536);
+    var server = new ServerObject("SRV00000000", "127.0.0.1", 0, "Raw", 65536);
     _root.Registry.TryAdd(server);
     server.Start(_root);
 
-    var client = new ClientObject("C1", "127.0.0.1", server.LocalPort, "Raw", 65536);
+    var client = new ClientObject("CLT00000000", "127.0.0.1", server.LocalPort, "Raw", 65536);
     _root.Registry.TryAdd(client);
     await client.ConnectAsync(_root, 5000);
 
-    var connectEvt = _root.Events.Wait("S1", 5000, _root.ShutdownToken);
+    var connectEvt = _root.Events.Wait("SRV00000000", 5000, _root.ShutdownToken);
     var connName = connectEvt.ObjectName;
 
     // Send large payload — may arrive in multiple Receive events
     var largeData = new byte[32768];
     Random.Shared.NextBytes(largeData);
     var mode = new RawMode();
-    var outMsg = mode.PrepareOutbound("C1", largeData, null, PostSendAction.None, null);
+    var outMsg = mode.PrepareOutbound("CLT00000000", largeData, null, PostSendAction.None, null);
     await client.Pipeline!.SendAsync(outMsg);
 
     // Collect received data (may come in multiple events)

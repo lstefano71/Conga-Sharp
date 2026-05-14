@@ -1,3 +1,5 @@
+using System.Buffers;
+
 namespace CongaSharp.ExternalBenchmark;
 
 /// <summary>
@@ -118,41 +120,54 @@ internal sealed unsafe class CongaApi : IDisposable
         int outObjCap = 1024, int outEventCap = 1024,
         int outDataCap = 2 * 1024 * 1024, int outHeadersCap = 64 * 1024)
     {
-        var outObj = new char[outObjCap];
-        var outEvent = new char[outEventCap];
+        var charPool = ArrayPool<char>.Shared;
+        var bytePool = ArrayPool<byte>.Shared;
+
+        var outObj = charPool.Rent(Math.Max(1, outObjCap));
+        var outEvent = charPool.Rent(Math.Max(1, outEventCap));
         int outEventCode;
-        var outData = new byte[outDataCap];
+        var outData = bytePool.Rent(Math.Max(1, outDataCap));
         int outDataLen;
-        var outHeaders = new byte[outHeadersCap];
+        var outHeaders = bytePool.Rent(Math.Max(1, outHeadersCap));
         int outHeadersLen;
 
-        fixed (char* pFilter = nameFilter)
-        fixed (char* pObj = outObj)
-        fixed (char* pEvent = outEvent)
-        fixed (byte* pData = outData)
-        fixed (byte* pHeaders = outHeaders)
+        try
         {
-            int rc = CongaNative.Wait(
-                _handle, pFilter, timeoutMs,
-                pObj, outObjCap,
-                pEvent, outEventCap,
-                &outEventCode,
-                pData, outDataCap, &outDataLen,
-                pHeaders, outHeadersCap, &outHeadersLen);
+            fixed (char* pFilter = nameFilter)
+            fixed (char* pObj = outObj)
+            fixed (char* pEvent = outEvent)
+            fixed (byte* pData = outData)
+            fixed (byte* pHeaders = outHeaders)
+            {
+                int rc = CongaNative.Wait(
+                    _handle, pFilter, timeoutMs,
+                    pObj, outObjCap,
+                    pEvent, outEventCap,
+                    &outEventCode,
+                    pData, outDataCap, &outDataLen,
+                    pHeaders, outHeadersCap, &outHeadersLen);
 
-            if (rc == WaitTimeout)
-                return null;
-            Check("conga_wait", rc);
+                if (rc == WaitTimeout)
+                    return null;
+                Check("conga_wait", rc);
 
-            int dataCount = Math.Min(outDataCap, outDataLen);
-            int headersCount = Math.Min(outHeadersCap, outHeadersLen);
+                int dataCount = Math.Min(outDataCap, outDataLen);
+                int headersCount = Math.Min(outHeadersCap, outHeadersLen);
 
-            return new WaitResult(
-                new string(pObj),
-                new string(pEvent),
-                outEventCode,
-                dataCount > 0 ? outData[..dataCount] : [],
-                headersCount > 0 ? outHeaders[..headersCount] : []);
+                return new WaitResult(
+                    new string(pObj),
+                    new string(pEvent),
+                    outEventCode,
+                    dataCount > 0 ? outData.AsSpan(0, dataCount).ToArray() : [],
+                    headersCount > 0 ? outHeaders.AsSpan(0, headersCount).ToArray() : []);
+            }
+        }
+        finally
+        {
+            charPool.Return(outObj);
+            charPool.Return(outEvent);
+            bytePool.Return(outData);
+            bytePool.Return(outHeaders);
         }
     }
 

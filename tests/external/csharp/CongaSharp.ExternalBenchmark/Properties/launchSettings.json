@@ -2,7 +2,8 @@
   "profiles": {
     "CongaSharp.ExternalBenchmark": {
       "commandName": "Project",
-      "commandLineArgs": "benchmark --dll c:\\Users\\stf\\Source\\Repos\\Conga-Sharp\\src\\CongaSharp\\bin\\Release\\net10.0\\win-x64\\publish\\congasharp.dll"
+      "commandLineArgs": "benchmark --dll c:\\Users\\stf\\Source\\Repos\\Conga-Sharp\\src\\CongaSharp\\bin\\Debug\\net10.0\\win-x64\\publish\\congasharp.dll",
+      "nativeDebugging": true
     }
   }
 }

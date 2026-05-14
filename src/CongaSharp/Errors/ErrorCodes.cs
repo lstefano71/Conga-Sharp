@@ -11,13 +11,14 @@ public static class ErrorCodes
   public const int Success = 0;
 
   // Conga-compatible codes
-  public const int WaitTimeout = 1;
   public const int Timeout = 100;
   public const int InvalidName = 1002;
   public const int InvalidMode = 1003;
+  public const int CommandNameInUse = 1008;
   public const int NameInUse = 1009;
   public const int NotServer = 1010;
   public const int NotClient = 1011;
+  public const int ConnectFailed = 1111;
   public const int SocketClosed = 1119;
   public const int BufferExceeded = 1135;
 
@@ -33,6 +34,5 @@ public static class ErrorCodes
   public const int InvalidHandle = 2009;
   public const int ProtocolError = 2010;
   public const int InvalidJson = 2011;
-  public const int ConnectFailed = 2012;
   public const int BindFailed = 2013;
 }

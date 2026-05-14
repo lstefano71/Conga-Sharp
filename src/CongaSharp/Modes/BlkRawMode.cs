@@ -44,7 +44,7 @@ public sealed class BlkRawMode : IConnectionMode
   }
 
   public IReadOnlyList<CongaEvent> OnDisconnected(string connectionName) =>
-      [new CongaEvent { ObjectName = connectionName, Type = EventType.Closed }];
+      [new CongaEvent { ObjectName = connectionName, Type = EventType.Closed, ReasonCode = Errors.ErrorCodes.SocketClosed }];
 
   public void ResetState(string connectionName) { }
 }

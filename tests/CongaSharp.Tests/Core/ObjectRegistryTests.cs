@@ -11,31 +11,31 @@ public class ObjectRegistryTests
   [Fact]
   public void GenerateServerName_Increments()
   {
-    Assert.Equal("S1", _registry.GenerateServerName());
-    Assert.Equal("S2", _registry.GenerateServerName());
+    Assert.Equal("SRV00000000", _registry.GenerateServerName());
+    Assert.Equal("SRV00000001", _registry.GenerateServerName());
   }
 
   [Fact]
   public void GenerateClientName_Increments()
   {
-    Assert.Equal("C1", _registry.GenerateClientName());
-    Assert.Equal("C2", _registry.GenerateClientName());
+    Assert.Equal("CLT00000000", _registry.GenerateClientName());
+    Assert.Equal("CLT00000001", _registry.GenerateClientName());
   }
 
   [Fact]
   public void GenerateConnectionName_IncludesParent()
   {
-    var name = _registry.GenerateConnectionName("S1");
-    Assert.StartsWith("S1.CON", name);
+    var name = _registry.GenerateConnectionName("SRV00000000");
+    Assert.StartsWith("SRV00000000.CON", name);
   }
 
   [Fact]
   public void GenerateConnectionName_Increments()
   {
-    var name1 = _registry.GenerateConnectionName("S1");
-    var name2 = _registry.GenerateConnectionName("S1");
-    Assert.Equal("S1.CON0001", name1);
-    Assert.Equal("S1.CON0002", name2);
+    var name1 = _registry.GenerateConnectionName("SRV00000000");
+    var name2 = _registry.GenerateConnectionName("SRV00000000");
+    Assert.Equal("SRV00000000.CON00000000", name1);
+    Assert.Equal("SRV00000000.CON00000001", name2);
   }
 
   [Fact]
@@ -43,9 +43,9 @@ public class ObjectRegistryTests
   {
     var counters = GetPrivateField<System.Collections.Concurrent.ConcurrentDictionary<string, int>>(
         _registry, "_nextConnection");
-    counters["S1"] = 9999;
+    counters["SRV00000000"] = 9999;
 
-    Assert.Equal("S1.CON10000", _registry.GenerateConnectionName("S1"));
+    Assert.Equal("SRV00000000.CON00010000", _registry.GenerateConnectionName("SRV00000000"));
   }
 
   [Fact]
@@ -53,24 +53,24 @@ public class ObjectRegistryTests
   {
     var counters = GetPrivateField<System.Collections.Concurrent.ConcurrentDictionary<string, int>>(
         _registry, "_nextAuto");
-    counters["C1"] = 99_999_999;
+    counters["CLT00000000"] = 99_999_999;
 
-    Assert.Equal("C1.Auto100000000", _registry.GenerateAutoName("C1"));
+    Assert.Equal("CLT00000000.Auto100000000", _registry.GenerateAutoName("CLT00000000"));
   }
 
   [Fact]
   public void TryAdd_And_Lookup()
   {
-    var srv = new ServerObject("S1", "", 5000, "Command", 16384);
+    var srv = new ServerObject("SRV00000000", "", 5000, "Command", 16384);
     Assert.True(_registry.TryAdd(srv));
-    Assert.Same(srv, _registry.Lookup("S1"));
+    Assert.Same(srv, _registry.Lookup("SRV00000000"));
   }
 
   [Fact]
   public void TryAdd_Duplicate_ReturnsFalse()
   {
-    var s1 = new ServerObject("S1", "", 5000, "Command", 16384);
-    var s1dup = new ServerObject("S1", "", 6000, "Raw", 8192);
+    var s1 = new ServerObject("SRV00000000", "", 5000, "Command", 16384);
+    var s1dup = new ServerObject("SRV00000000", "", 6000, "Raw", 8192);
     Assert.True(_registry.TryAdd(s1));
     Assert.False(_registry.TryAdd(s1dup));
   }
@@ -78,9 +78,9 @@ public class ObjectRegistryTests
   [Fact]
   public void Lookup_CaseInsensitive()
   {
-    var srv = new ServerObject("S1", "", 5000, "Command", 16384);
+    var srv = new ServerObject("SRV00000000", "", 5000, "Command", 16384);
     _registry.TryAdd(srv);
-    Assert.Same(srv, _registry.Lookup("s1"));
+    Assert.Same(srv, _registry.Lookup("srv00000000"));
   }
 
   [Fact]
@@ -92,43 +92,43 @@ public class ObjectRegistryTests
   [Fact]
   public void GetChildNames_Root()
   {
-    _registry.TryAdd(new ServerObject("S1", "", 5000, "Command", 16384));
-    _registry.TryAdd(new ClientObject("C1", "localhost", 5000, "Command", 16384));
-    _registry.TryAdd(new ConnectionObject("S1.CON0001", new ServerObject("S1", "", 5000, "Command", 16384)));
+    _registry.TryAdd(new ServerObject("SRV00000000", "", 5000, "Command", 16384));
+    _registry.TryAdd(new ClientObject("CLT00000000", "localhost", 5000, "Command", 16384));
+    _registry.TryAdd(new ConnectionObject("SRV00000000.CON00000000", new ServerObject("SRV00000000", "", 5000, "Command", 16384)));
 
     var rootChildren = _registry.GetChildNames(".");
-    Assert.Contains("S1", rootChildren);
-    Assert.Contains("C1", rootChildren);
-    Assert.DoesNotContain("S1.CON0001", rootChildren);
+    Assert.Contains("SRV00000000", rootChildren);
+    Assert.Contains("CLT00000000", rootChildren);
+    Assert.DoesNotContain("SRV00000000.CON00000000", rootChildren);
   }
 
   [Fact]
   public void GetChildNames_Server()
   {
-    _registry.TryAdd(new ServerObject("S1", "", 5000, "Command", 16384));
-    _registry.TryAdd(new ConnectionObject("S1.CON0001", new ServerObject("S1", "", 5000, "Command", 16384)));
-    _registry.TryAdd(new ConnectionObject("S1.CON0002", new ServerObject("S1", "", 5000, "Command", 16384)));
+    _registry.TryAdd(new ServerObject("SRV00000000", "", 5000, "Command", 16384));
+    _registry.TryAdd(new ConnectionObject("SRV00000000.CON00000000", new ServerObject("SRV00000000", "", 5000, "Command", 16384)));
+    _registry.TryAdd(new ConnectionObject("SRV00000000.CON00000001", new ServerObject("SRV00000000", "", 5000, "Command", 16384)));
 
-    var children = _registry.GetChildNames("S1");
+    var children = _registry.GetChildNames("SRV00000000");
     Assert.Equal(2, children.Count);
-    Assert.Contains("S1.CON0001", children);
-    Assert.Contains("S1.CON0002", children);
+    Assert.Contains("SRV00000000.CON00000000", children);
+    Assert.Contains("SRV00000000.CON00000001", children);
   }
 
   [Fact]
   public void RemoveTree_RemovesObjectAndDescendants()
   {
-    _registry.TryAdd(new ServerObject("S1", "", 5000, "Command", 16384));
-    _registry.TryAdd(new ConnectionObject("S1.CON0001", new ServerObject("S1", "", 5000, "Command", 16384)));
-    _registry.TryAdd(new CommandObject("S1.CON0001.Cmd1", new ConnectionObject("S1.CON0001", null!)));
-    _registry.TryAdd(new ClientObject("C1", "localhost", 5000, "Command", 16384));
+    _registry.TryAdd(new ServerObject("SRV00000000", "", 5000, "Command", 16384));
+    _registry.TryAdd(new ConnectionObject("SRV00000000.CON00000000", new ServerObject("SRV00000000", "", 5000, "Command", 16384)));
+    _registry.TryAdd(new CommandObject("SRV00000000.CON00000000.Cmd1", new ConnectionObject("SRV00000000.CON00000000", null!)));
+    _registry.TryAdd(new ClientObject("CLT00000000", "localhost", 5000, "Command", 16384));
 
-    var removed = _registry.RemoveTree("S1");
+    var removed = _registry.RemoveTree("SRV00000000");
     Assert.Equal(3, removed.Count);
-    Assert.Null(_registry.Lookup("S1"));
-    Assert.Null(_registry.Lookup("S1.CON0001"));
-    Assert.Null(_registry.Lookup("S1.CON0001.Cmd1"));
-    Assert.NotNull(_registry.Lookup("C1"));
+    Assert.Null(_registry.Lookup("SRV00000000"));
+    Assert.Null(_registry.Lookup("SRV00000000.CON00000000"));
+    Assert.Null(_registry.Lookup("SRV00000000.CON00000000.Cmd1"));
+    Assert.NotNull(_registry.Lookup("CLT00000000"));
   }
 
   [Fact]

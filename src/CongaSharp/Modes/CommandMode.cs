@@ -174,7 +174,8 @@ public sealed class CommandMode : IConnectionMode
       foreach (var cmdName in commands.Keys) {
         events.Add(new CongaEvent {
           ObjectName = $"{connectionName}.{cmdName}",
-          Type = EventType.Closed
+          Type = EventType.Closed,
+          ReasonCode = Errors.ErrorCodes.SocketClosed
         });
       }
     }
@@ -184,7 +185,7 @@ public sealed class CommandMode : IConnectionMode
     _cmdToGuid.TryRemove(connectionName, out _);
     _nextRecvCmd.TryRemove(connectionName, out _);
 
-    events.Add(new CongaEvent { ObjectName = connectionName, Type = EventType.Closed });
+    events.Add(new CongaEvent { ObjectName = connectionName, Type = EventType.Closed, ReasonCode = Errors.ErrorCodes.SocketClosed });
     return events;
   }
 

@@ -1,0 +1,72 @@
+# External C-API Benchmarks (C# Harness)
+
+Run timestamp: `2026-04-23T16:53:36+02:00`
+
+| Mode | Size | Pattern | Compression | Level | Thrpt p50 (MB/s) | Thrpt p95 (MB/s) | Msg/s p50 | Lat p50 (ms) | Lat p95 (ms) |
+|------|------|---------|-------------|-------|------------------:|------------------:|----------:|-------------:|-------------:|
+| Command | 100 B | Random | None | 0 | 1,5 | 1,1 | 15267,2 | 0,07 | 0,09 |
+| Command | 100 B | Random | Deflate | 1 | 0,9 | 0,4 | 9487,7 | 0,11 | 0,25 |
+| Command | 100 B | Random | Deflate | 2 | 0,3 | 0,3 | 3437,6 | 0,29 | 0,31 |
+| Command | 100 B | Random | Deflate | 3 | 0,5 | 0,3 | 5537,1 | 0,18 | 0,38 |
+| Command | 100 B | Random | LZ4 | 0 | 1,4 | 1,2 | 14245,0 | 0,07 | 0,08 |
+| Command | 100 B | Random | LZ4 | 6 | 0,7 | 0,5 | 7168,5 | 0,14 | 0,17 |
+| Command | 100 B | Random | LZ4 | 12 | 0,9 | 0,8 | 9337,1 | 0,11 | 0,12 |
+| Command | 100 B | Random | Zstd | 1 | 1,3 | 1,0 | 14044,9 | 0,07 | 0,10 |
+| Command | 100 B | Random | Zstd | 3 | 0,9 | 0,7 | 9000,9 | 0,11 | 0,14 |
+| Command | 100 B | Random | Zstd | 10 | 1,1 | 0,8 | 11325,0 | 0,09 | 0,12 |
+| Command | 100 B | Random | Zstd | 22 | 0,8 | 0,6 | 8591,1 | 0,12 | 0,16 |
+| Command | 100 B | Compressible | None | 0 | 1,5 | 1,3 | 15479,9 | 0,06 | 0,08 |
+| Command | 100 B | Compressible | Deflate | 1 | 0,9 | 0,3 | 9775,2 | 0,10 | 0,28 |
+| Command | 100 B | Compressible | Deflate | 2 | 0,3 | 0,2 | 3024,8 | 0,33 | 0,42 |
+| Command | 100 B | Compressible | Deflate | 3 | 0,3 | 0,2 | 3371,5 | 0,30 | 0,43 |
+| Command | 100 B | Compressible | LZ4 | 0 | 1,4 | 1,3 | 14705,9 | 0,07 | 0,07 |
+| Command | 100 B | Compressible | LZ4 | 6 | 0,8 | 0,8 | 8726,0 | 0,11 | 0,12 |
+| Command | 100 B | Compressible | LZ4 | 12 | 0,6 | 0,5 | 6468,3 | 0,15 | 0,21 |
+| Command | 100 B | Compressible | Zstd | 1 | 0,9 | 0,8 | 9624,6 | 0,10 | 0,12 |
+| Command | 100 B | Compressible | Zstd | 3 | 1,3 | 1,2 | 14005,6 | 0,07 | 0,08 |
+| Command | 100 B | Compressible | Zstd | 10 | 0,7 | 0,6 | 7686,4 | 0,13 | 0,15 |
+| Command | 100 B | Compressible | Zstd | 22 | 0,9 | 0,8 | 8992,8 | 0,11 | 0,12 |
+| Command | 1000 B | Random | None | 0 | 14,3 | 13,5 | 15015,0 | 0,07 | 0,07 |
+| Command | 1000 B | Random | Deflate | 1 | 7,4 | 2,7 | 7788,2 | 0,13 | 0,35 |
+| Command | 1000 B | Random | Deflate | 2 | 2,8 | 2,4 | 2958,6 | 0,34 | 0,40 |
+| Command | 1000 B | Random | Deflate | 3 | 2,5 | 1,9 | 2617,8 | 0,38 | 0,49 |
+| Command | 1000 B | Random | LZ4 | 0 | 13,4 | 11,6 | 14025,2 | 0,07 | 0,08 |
+| Command | 1000 B | Random | LZ4 | 6 | 7,4 | 6,5 | 7710,1 | 0,13 | 0,15 |
+| Command | 1000 B | Random | LZ4 | 12 | 6,7 | 3,7 | 7067,1 | 0,14 | 0,26 |
+| Command | 1000 B | Random | Zstd | 1 | 12,4 | 12,0 | 13020,8 | 0,08 | 0,08 |
+| Command | 1000 B | Random | Zstd | 3 | 12,0 | 11,7 | 12562,8 | 0,08 | 0,08 |
+| Command | 1000 B | Random | Zstd | 10 | 10,8 | 10,6 | 11312,2 | 0,09 | 0,09 |
+| Command | 1000 B | Random | Zstd | 22 | 3,8 | 2,4 | 3935,5 | 0,25 | 0,40 |
+| Command | 1000 B | Compressible | None | 0 | 15,0 | 12,0 | 15723,3 | 0,06 | 0,08 |
+| Command | 1000 B | Compressible | Deflate | 1 | 6,2 | 2,1 | 6480,9 | 0,15 | 0,45 |
+| Command | 1000 B | Compressible | Deflate | 2 | 2,9 | 1,7 | 2994,9 | 0,33 | 0,55 |
+| Command | 1000 B | Compressible | Deflate | 3 | 3,0 | 1,9 | 3118,2 | 0,32 | 0,50 |
+| Command | 1000 B | Compressible | LZ4 | 0 | 13,2 | 7,7 | 13869,6 | 0,07 | 0,12 |
+| Command | 1000 B | Compressible | LZ4 | 6 | 8,3 | 3,9 | 8665,5 | 0,12 | 0,24 |
+| Command | 1000 B | Compressible | LZ4 | 12 | 4,6 | 3,9 | 4826,3 | 0,21 | 0,25 |
+| Command | 1000 B | Compressible | Zstd | 1 | 12,2 | 8,4 | 12820,5 | 0,08 | 0,11 |
+| Command | 1000 B | Compressible | Zstd | 3 | 8,5 | 6,6 | 8944,5 | 0,11 | 0,14 |
+| Command | 1000 B | Compressible | Zstd | 10 | 12,5 | 10,8 | 13123,4 | 0,08 | 0,09 |
+| Command | 1000 B | Compressible | Zstd | 22 | 6,9 | 6,8 | 7220,2 | 0,14 | 0,14 |
+| Command | 9 KB | Random | None | 0 | 62,3 | 57,7 | 6535,9 | 0,15 | 0,17 |
+| Command | 9 KB | Random | Deflate | 1 | 20,4 | 10,6 | 2134,5 | 0,47 | 0,90 |
+| Command | 9 KB | Random | Deflate | 2 | 16,1 | 10,5 | 1683,5 | 0,59 | 0,91 |
+| Command | 9 KB | Random | Deflate | 3 | 17,2 | 13,9 | 1800,2 | 0,56 | 0,69 |
+| Command | 9 KB | Random | LZ4 | 0 | 99,1 | 40,5 | 10395,0 | 0,10 | 0,24 |
+| Command | 9 KB | Random | LZ4 | 6 | 31,1 | 27,7 | 3264,8 | 0,31 | 0,34 |
+| Command | 9 KB | Random | LZ4 | 12 | 28,7 | 16,5 | 3009,3 | 0,33 | 0,58 |
+| Command | 9 KB | Random | Zstd | 1 | 56,7 | 42,1 | 5941,8 | 0,17 | 0,23 |
+| Command | 9 KB | Random | Zstd | 3 | 82,1 | 51,1 | 8613,3 | 0,12 | 0,19 |
+| Command | 9 KB | Random | Zstd | 10 | 47,9 | 45,1 | 5022,6 | 0,20 | 0,21 |
+| Command | 9 KB | Random | Zstd | 22 | 7,4 | 4,3 | 780,5 | 1,28 | 2,21 |
+| Command | 9 KB | Compressible | None | 0 | 114,6 | 87,6 | 12019,2 | 0,08 | 0,11 |
+| Command | 9 KB | Compressible | Deflate | 1 | 27,7 | 21,6 | 2904,4 | 0,34 | 0,44 |
+| Command | 9 KB | Compressible | Deflate | 2 | 27,4 | 15,5 | 2871,9 | 0,35 | 0,62 |
+| Command | 9 KB | Compressible | Deflate | 3 | 17,9 | 10,5 | 1878,3 | 0,53 | 0,91 |
+| Command | 9 KB | Compressible | LZ4 | 0 | 65,6 | 56,4 | 6877,6 | 0,15 | 0,17 |
+| Command | 9 KB | Compressible | LZ4 | 6 | 59,3 | 54,8 | 6222,8 | 0,16 | 0,17 |
+| Command | 9 KB | Compressible | LZ4 | 12 | 56,7 | 48,7 | 5941,8 | 0,17 | 0,20 |
+| Command | 9 KB | Compressible | Zstd | 1 | 49,8 | 29,2 | 5219,2 | 0,19 | 0,33 |
+| Command | 9 KB | Compressible | Zstd | 3 | 59,6 | 49,0 | 6246,1 | 0,16 | 0,19 |
+| Command | 9 KB | Compressible | Zstd | 10 | 59,0 | 52,0 | 6188,1 | 0,16 | 0,18 |
+| Command | 9 KB | Compressible | Zstd | 22 | 46,7 | 45,5 | 4892,4 | 0,20 | 0,21 |

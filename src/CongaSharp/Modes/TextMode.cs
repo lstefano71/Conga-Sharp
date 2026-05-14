@@ -93,7 +93,7 @@ public sealed class TextMode : IConnectionMode
       }
     }
 
-    events.Add(new CongaEvent { ObjectName = connectionName, Type = EventType.Closed });
+    events.Add(new CongaEvent { ObjectName = connectionName, Type = EventType.Closed, ReasonCode = Errors.ErrorCodes.SocketClosed });
     return events;
   }
 

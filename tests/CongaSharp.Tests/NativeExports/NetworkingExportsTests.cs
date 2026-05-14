@@ -26,7 +26,7 @@ public class NetworkingExportsTests : IDisposable
   // ── conga_wait timeout ─────────────────────────────────────────────
 
   [Fact]
-  public unsafe void WaitTimeout_ReturnsOne()
+  public unsafe void WaitTimeout_ReturnsTimeoutEvent()
   {
     var outObj = new char[256];
     var outEvent = new char[256];
@@ -49,14 +49,17 @@ public class NetworkingExportsTests : IDisposable
           outDataPtr, 1024, &dataLen,
           outHeadersPtr, 1024, &headersLen);
 
-      Assert.Equal(ErrorCodes.WaitTimeout, rc);
+      Assert.Equal(ErrorCodes.Success, rc);
+      Assert.Equal(".", new string(outObjPtr));
+      Assert.Equal("Timeout", new string(outEventPtr));
+      Assert.Equal(100, eventCode);
     }
   }
 
   // ── Server create / start ──────────────────────────────────────────
 
   [Fact]
-  public unsafe void CreateServer_AutoName_ReturnsS1()
+  public unsafe void CreateServer_AutoName_ReturnsSRV00000000()
   {
     var outName = new char[256];
     int outLen;
@@ -70,7 +73,7 @@ public class NetworkingExportsTests : IDisposable
           outNamePtr, 256, &outLen);
 
       Assert.Equal(ErrorCodes.Success, rc);
-      Assert.Equal("S1", new string(outNamePtr));
+      Assert.Equal("SRV00000000", new string(outNamePtr));
     }
   }
 
@@ -79,7 +82,7 @@ public class NetworkingExportsTests : IDisposable
   {
     CreateServer("Raw");
 
-    fixed (char* namePtr = "S1") {
+    fixed (char* namePtr = "SRV00000000") {
       int rc = NativeApi.SrvStart(_handle, namePtr);
       Assert.Equal(ErrorCodes.Success, rc);
     }
@@ -108,7 +111,7 @@ public class NetworkingExportsTests : IDisposable
   {
     CreateClient("127.0.0.1", 9999, "Raw");
 
-    fixed (char* namePtr = "C1") {
+    fixed (char* namePtr = "CLT00000000") {
       int rc = NativeApi.SrvStart(_handle, namePtr);
       Assert.Equal(ErrorCodes.NotServer, rc);
     }
@@ -119,7 +122,7 @@ public class NetworkingExportsTests : IDisposable
   {
     CreateServer("Raw");
 
-    fixed (char* namePtr = "S1") {
+    fixed (char* namePtr = "SRV00000000") {
       int rc = NativeApi.CltConnect(_handle, namePtr, 100);
       Assert.Equal(ErrorCodes.NotClient, rc);
     }
@@ -131,15 +134,15 @@ public class NetworkingExportsTests : IDisposable
   public unsafe void ConnectClient_ReceivesConnectEvent()
   {
     CreateServer("Raw");
-    StartServer("S1");
-    int port = GetLocalPort("S1");
+    StartServer("SRV00000000");
+    int port = GetLocalPort("SRV00000000");
 
     CreateClient("127.0.0.1", port, "Raw");
-    ConnectClient("C1", 5000);
+    ConnectClient("CLT00000000", 5000);
 
-    var (objName, eventName, eventCode, _, _, rc) = WaitForEvent("S1", 5000);
+    var (objName, eventName, eventCode, _, _, rc) = WaitForEvent("SRV00000000", 5000);
     Assert.Equal(ErrorCodes.Success, rc);
-    Assert.StartsWith("S1.CON", objName);
+    Assert.StartsWith("SRV00000000.CON", objName);
     Assert.Equal("Connect", eventName);
     Assert.Equal((int)EventType.Connect, eventCode);
   }
@@ -152,14 +155,14 @@ public class NetworkingExportsTests : IDisposable
     SetupRawConnection(out var connName);
 
     var data = "Hello Server"u8.ToArray();
-    fixed (char* namePtr = "C1")
+    fixed (char* namePtr = "CLT00000000")
     fixed (byte* dataPtr = data) {
       int rc = NativeApi.Send(
           _handle, namePtr, dataPtr, data.Length, null, 0, 0);
       Assert.Equal(ErrorCodes.Success, rc);
     }
 
-    var (objName, eventName, _, payload, _, rc2) = WaitForEvent("S1", 5000);
+    var (objName, eventName, _, payload, _, rc2) = WaitForEvent("SRV00000000", 5000);
     Assert.Equal(ErrorCodes.Success, rc2);
     Assert.Equal(connName, objName);
     Assert.Equal("Receive", eventName);
@@ -172,20 +175,20 @@ public class NetworkingExportsTests : IDisposable
   public unsafe void CommandMode_SendReceiveRespond()
   {
     CreateServer("Command");
-    StartServer("S1");
-    int port = GetLocalPort("S1");
+    StartServer("SRV00000000");
+    int port = GetLocalPort("SRV00000000");
 
     CreateClient("127.0.0.1", port, "Command");
-    ConnectClient("C1", 5000);
+    ConnectClient("CLT00000000", 5000);
 
     // Consume Connect event
-    var (connName, _, _, _, _, connectRc) = WaitForEvent("S1", 5000);
+    var (connName, _, _, _, _, connectRc) = WaitForEvent("SRV00000000", 5000);
     Assert.Equal(ErrorCodes.Success, connectRc);
-    Assert.StartsWith("S1.CON", connName);
+    Assert.StartsWith("SRV00000000.CON", connName);
 
     // Client sends command "GetInfo"
     var request = "What is your status?"u8.ToArray();
-    fixed (char* namePtr = "C1.GetInfo")
+    fixed (char* namePtr = "CLT00000000.GetInfo")
     fixed (byte* dataPtr = request) {
       int rc = NativeApi.Send(
           _handle, namePtr, dataPtr, request.Length, null, 0, 0);
@@ -193,7 +196,7 @@ public class NetworkingExportsTests : IDisposable
     }
 
     // Server receives command (server-side name is auto-generated from correlation GUID)
-    var (cmdObjName, evtName, _, reqPayload, _, recvRc) = WaitForEvent("S1", 5000);
+    var (cmdObjName, evtName, _, reqPayload, _, recvRc) = WaitForEvent("SRV00000000", 5000);
     Assert.Equal(ErrorCodes.Success, recvRc);
     Assert.StartsWith($"{connName}.", cmdObjName);
     Assert.Equal("Receive", evtName);
@@ -210,9 +213,9 @@ public class NetworkingExportsTests : IDisposable
     }
 
     // Client receives response
-    var (clientCmd, clientEvt, _, respPayload, _, respRc) = WaitForEvent("C1", 5000);
+    var (clientCmd, clientEvt, _, respPayload, _, respRc) = WaitForEvent("CLT00000000", 5000);
     Assert.Equal(ErrorCodes.Success, respRc);
-    Assert.Equal("C1.GetInfo", clientCmd);
+    Assert.Equal("CLT00000000.GetInfo", clientCmd);
     Assert.Equal("Receive", clientEvt);
     Assert.Equal("All systems operational",
         System.Text.Encoding.UTF8.GetString(respPayload));
@@ -224,14 +227,14 @@ public class NetworkingExportsTests : IDisposable
   public unsafe void CloseServer_RemovesFromRegistry()
   {
     CreateServer("Raw");
-    StartServer("S1");
+    StartServer("SRV00000000");
 
-    fixed (char* namePtr = "S1") {
+    fixed (char* namePtr = "SRV00000000") {
       int rc = NativeApi.Close(_handle, namePtr);
       Assert.Equal(ErrorCodes.Success, rc);
     }
 
-    Assert.Null(HandleTable.Lookup(_handle)!.Registry.Lookup("S1"));
+    Assert.Null(HandleTable.Lookup(_handle)!.Registry.Lookup("SRV00000000"));
   }
 
   // ── conga_send with close_flag=1 ───────────────────────────────────
@@ -242,7 +245,7 @@ public class NetworkingExportsTests : IDisposable
     SetupRawConnection(out _);
 
     var data = "Goodbye"u8.ToArray();
-    fixed (char* namePtr = "C1")
+    fixed (char* namePtr = "CLT00000000")
     fixed (byte* dataPtr = data) {
       int rc = NativeApi.Send(
           _handle, namePtr, dataPtr, data.Length, null, 0, 1);
@@ -250,7 +253,7 @@ public class NetworkingExportsTests : IDisposable
     }
 
     var root = HandleTable.Lookup(_handle)!;
-    Assert.Null(root.Registry.Lookup("C1"));
+    Assert.Null(root.Registry.Lookup("CLT00000000"));
   }
 
   // ── Buffer too small for string output in conga_wait ───────────────
@@ -262,12 +265,12 @@ public class NetworkingExportsTests : IDisposable
 
     // Send data so there's an event to dequeue
     var data = "Hello"u8.ToArray();
-    fixed (char* namePtr = "C1")
+    fixed (char* namePtr = "CLT00000000")
     fixed (byte* dataPtr = data) {
       NativeApi.Send(_handle, namePtr, dataPtr, data.Length, null, 0, 0);
     }
 
-    // Wait with tiny outObj buffer (too small for "S1.CON0001")
+    // Wait with tiny outObj buffer (too small for "SRV00000000.CON00000000")
     var outObj = new char[3];
     var outEvent = new char[256];
     int eventCode;
@@ -276,7 +279,7 @@ public class NetworkingExportsTests : IDisposable
     var outHeaders = new byte[1024];
     int headersLen;
 
-    fixed (char* filterPtr = "S1")
+    fixed (char* filterPtr = "SRV00000000")
     fixed (char* outObjPtr = outObj)
     fixed (char* outEventPtr = outEvent)
     fixed (byte* outDataPtr = outData)
@@ -301,7 +304,7 @@ public class NetworkingExportsTests : IDisposable
     SetupRawConnection(out _);
 
     var data = "Hello Server, this is a longer message"u8.ToArray();
-    fixed (char* namePtr = "C1")
+    fixed (char* namePtr = "CLT00000000")
     fixed (byte* dataPtr = data) {
       NativeApi.Send(_handle, namePtr, dataPtr, data.Length, null, 0, 0);
     }
@@ -314,7 +317,7 @@ public class NetworkingExportsTests : IDisposable
     var outHeaders = new byte[1024];
     int headersLen;
 
-    fixed (char* filterPtr = "S1")
+    fixed (char* filterPtr = "SRV00000000")
     fixed (char* outObjPtr = outObj)
     fixed (char* outEventPtr = outEvent)
     fixed (byte* outDataPtr = outData)
@@ -345,10 +348,10 @@ public class NetworkingExportsTests : IDisposable
     SetupCommandConnection(out _);
 
     var data = "request"u8.ToArray();
-    var (rc, handle) = SendWithHandle("C1", data);
+    var (rc, handle) = SendWithHandle("CLT00000000", data);
 
     Assert.Equal(ErrorCodes.Success, rc);
-    Assert.Equal("C1.Auto00000000", handle);
+    Assert.Equal("CLT00000000.Auto00000000", handle);
   }
 
   [Fact]
@@ -358,12 +361,12 @@ public class NetworkingExportsTests : IDisposable
 
     var data = "req"u8.ToArray();
 
-    var (rc1, handle1) = SendWithHandle("C1", data);
+    var (rc1, handle1) = SendWithHandle("CLT00000000", data);
     Assert.Equal(ErrorCodes.Success, rc1);
-    Assert.Equal("C1.Auto00000000", handle1);
+    Assert.Equal("CLT00000000.Auto00000000", handle1);
 
     // Consume server event and respond so the first command is complete
-    var (srvObj1, _, _, _, _, srvRc1) = WaitForEvent("S1", 5000);
+    var (srvObj1, _, _, _, _, srvRc1) = WaitForEvent("SRV00000000", 5000);
     Assert.Equal(ErrorCodes.Success, srvRc1);
 
     var resp = "ok"u8.ToArray();
@@ -373,11 +376,11 @@ public class NetworkingExportsTests : IDisposable
     }
 
     // Consume client response
-    WaitForEvent("C1", 5000);
+    WaitForEvent("CLT00000000", 5000);
 
-    var (rc2, handle2) = SendWithHandle("C1", data);
+    var (rc2, handle2) = SendWithHandle("CLT00000000", data);
     Assert.Equal(ErrorCodes.Success, rc2);
-    Assert.Equal("C1.Auto00000001", handle2);
+    Assert.Equal("CLT00000000.Auto00000001", handle2);
   }
 
   // ── Command mode: explicit dotted name returned unaltered ─────────
@@ -388,10 +391,10 @@ public class NetworkingExportsTests : IDisposable
     SetupCommandConnection(out _);
 
     var data = "request"u8.ToArray();
-    var (rc, handle) = SendWithHandle("C1.MyCmd", data);
+    var (rc, handle) = SendWithHandle("CLT00000000.MyCmd", data);
 
     Assert.Equal(ErrorCodes.Success, rc);
-    Assert.Equal("C1.MyCmd", handle);
+    Assert.Equal("CLT00000000.MyCmd", handle);
   }
 
   // ── Command mode: wait by handle isolates one command ─────────────
@@ -404,15 +407,15 @@ public class NetworkingExportsTests : IDisposable
     var data = "req"u8.ToArray();
 
     // Send two parallel commands
-    var (rc1, handle1) = SendWithHandle("C1", data);
-    var (rc2, handle2) = SendWithHandle("C1", data);
+    var (rc1, handle1) = SendWithHandle("CLT00000000", data);
+    var (rc2, handle2) = SendWithHandle("CLT00000000", data);
     Assert.Equal(ErrorCodes.Success, rc1);
     Assert.Equal(ErrorCodes.Success, rc2);
     Assert.NotEqual(handle1, handle2);
 
     // Server receives both — respond to them
-    var (srvObj1, _, _, _, _, sRc1) = WaitForEvent("S1", 5000);
-    var (srvObj2, _, _, _, _, sRc2) = WaitForEvent("S1", 5000);
+    var (srvObj1, _, _, _, _, sRc1) = WaitForEvent("SRV00000000", 5000);
+    var (srvObj2, _, _, _, _, sRc2) = WaitForEvent("SRV00000000", 5000);
     Assert.Equal(ErrorCodes.Success, sRc1);
     Assert.Equal(ErrorCodes.Success, sRc2);
 
@@ -450,11 +453,11 @@ public class NetworkingExportsTests : IDisposable
     SetupCommandConnection(out var connName);
 
     var data = "req"u8.ToArray();
-    var (rc1, _) = SendWithHandle("C1", data);
+    var (rc1, _) = SendWithHandle("CLT00000000", data);
     Assert.Equal(ErrorCodes.Success, rc1);
 
     // Server receives and responds
-    var (srvObj, _, _, _, _, sRc) = WaitForEvent("S1", 5000);
+    var (srvObj, _, _, _, _, sRc) = WaitForEvent("SRV00000000", 5000);
     Assert.Equal(ErrorCodes.Success, sRc);
     var resp = "done"u8.ToArray();
     fixed (char* n = srvObj)
@@ -462,10 +465,10 @@ public class NetworkingExportsTests : IDisposable
       NativeApi.Respond(_handle, n, d, resp.Length);
     }
 
-    // Client waits on "C1" — should receive the Auto command response
-    var (obj, evt, _, payload, _, wRc) = WaitForEvent("C1", 5000);
+    // Client waits on "CLT00000000" — should receive the Auto command response
+    var (obj, evt, _, payload, _, wRc) = WaitForEvent("CLT00000000", 5000);
     Assert.Equal(ErrorCodes.Success, wRc);
-    Assert.StartsWith("C1.Auto", obj);
+    Assert.StartsWith("CLT00000000.Auto", obj);
     Assert.Equal("Receive", evt);
     Assert.Equal("done", System.Text.Encoding.UTF8.GetString(payload));
   }
@@ -492,10 +495,10 @@ public class NetworkingExportsTests : IDisposable
     SetupRawConnection(out _);
 
     var data = "hello"u8.ToArray();
-    var (rc, handle) = SendWithHandle("C1", data);
+    var (rc, handle) = SendWithHandle("CLT00000000", data);
 
     Assert.Equal(ErrorCodes.Success, rc);
-    Assert.Equal("C1.Auto00000000", handle);
+    Assert.Equal("CLT00000000.Auto00000000", handle);
   }
 
   [Fact]
@@ -504,10 +507,10 @@ public class NetworkingExportsTests : IDisposable
     SetupRawConnection(out _);
 
     var data = "hello"u8.ToArray();
-    var (rc, handle) = SendWithHandle("C1.MyMsg", data);
+    var (rc, handle) = SendWithHandle("CLT00000000.MyMsg", data);
 
     Assert.Equal(ErrorCodes.Success, rc);
-    Assert.Equal("C1.MyMsg", handle);
+    Assert.Equal("CLT00000000.MyMsg", handle);
   }
 
   // ── Send outName buffer too small ─────────────────────────────────
@@ -518,10 +521,10 @@ public class NetworkingExportsTests : IDisposable
     SetupRawConnection(out _);
 
     var data = "hello"u8.ToArray();
-    var outName = new char[3]; // too small for "C1.Auto00000000"
+    var outName = new char[3]; // too small for "CLT00000000.Auto00000000"
     int outNameLen;
 
-    fixed (char* namePtr = "C1")
+    fixed (char* namePtr = "CLT00000000")
     fixed (byte* dataPtr = data)
     fixed (char* outNamePtr = outName) {
       int rc = NativeApi.Send(
@@ -529,7 +532,7 @@ public class NetworkingExportsTests : IDisposable
           null, 0, 0, 0, 0, 0, outNamePtr, 3, &outNameLen);
 
       Assert.Equal(ErrorCodes.BufferTooSmall, rc);
-      Assert.Equal("C1.Auto00000000".Length + 1, outNameLen);
+      Assert.Equal("CLT00000000.Auto00000000".Length + 1, outNameLen);
     }
   }
 
@@ -646,13 +649,13 @@ public class NetworkingExportsTests : IDisposable
   private unsafe void SetupRawConnection(out string connName)
   {
     CreateServer("Raw");
-    StartServer("S1");
-    int port = GetLocalPort("S1");
+    StartServer("SRV00000000");
+    int port = GetLocalPort("SRV00000000");
 
     CreateClient("127.0.0.1", port, "Raw");
-    ConnectClient("C1", 5000);
+    ConnectClient("CLT00000000", 5000);
 
-    var (obj, _, _, _, _, rc) = WaitForEvent("S1", 5000);
+    var (obj, _, _, _, _, rc) = WaitForEvent("SRV00000000", 5000);
     Assert.Equal(ErrorCodes.Success, rc);
     connName = obj;
   }
@@ -664,13 +667,13 @@ public class NetworkingExportsTests : IDisposable
   private unsafe void SetupCommandConnection(out string connName)
   {
     CreateServer("Command");
-    StartServer("S1");
-    int port = GetLocalPort("S1");
+    StartServer("SRV00000000");
+    int port = GetLocalPort("SRV00000000");
 
     CreateClient("127.0.0.1", port, "Command");
-    ConnectClient("C1", 5000);
+    ConnectClient("CLT00000000", 5000);
 
-    var (obj, _, _, _, _, rc) = WaitForEvent("S1", 5000);
+    var (obj, _, _, _, _, rc) = WaitForEvent("SRV00000000", 5000);
     Assert.Equal(ErrorCodes.Success, rc);
     connName = obj;
   }

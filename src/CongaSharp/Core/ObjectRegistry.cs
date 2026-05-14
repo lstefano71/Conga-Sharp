@@ -4,13 +4,13 @@ using System.Collections.Concurrent;
 
 /// <summary>
 /// Thread-safe registry mapping object names to CongaObject instances.
-/// Handles auto-name generation (S1, S2, C1, C2, S1.CON0001, etc.)
+/// Handles auto-name generation (SRV00000000, CLT00000000, SRV00000000.CON00000000, etc.)
 /// </summary>
 public sealed class ObjectRegistry
 {
   private readonly ConcurrentDictionary<string, CongaObject> _objects = new(StringComparer.OrdinalIgnoreCase);
-  private int _nextServer;
-  private int _nextClient;
+  private int _nextServer = -1;
+  private int _nextClient = -1;
   private readonly ConcurrentDictionary<string, int> _nextConnection = new(StringComparer.OrdinalIgnoreCase);
   private readonly ConcurrentDictionary<string, int> _nextAuto = new(StringComparer.OrdinalIgnoreCase);
 
@@ -39,26 +39,19 @@ public sealed class ObjectRegistry
   public string GenerateServerName()
   {
     var n = Interlocked.Increment(ref _nextServer);
-    return $"S{n}";
+    return $"SRV{n:D8}";
   }
 
   public string GenerateClientName()
   {
     var n = Interlocked.Increment(ref _nextClient);
-    return $"C{n}";
+    return $"CLT{n:D8}";
   }
 
   public string GenerateConnectionName(string parentName)
   {
-    var n = _nextConnection.AddOrUpdate(parentName, 1, IncrementValue);
-    var width = GetPaddedDecimalWidth(n, 4);
-    return string.Create(parentName.Length + 4 + width, (parentName, n), static (span, state) => {
-      state.parentName.AsSpan().CopyTo(span);
-      span[state.parentName.Length] = '.';
-      "CON".AsSpan().CopyTo(span[(state.parentName.Length + 1)..]);
-      if (!state.n.TryFormat(span[(state.parentName.Length + 4)..], out _, "D4"))
-        throw new InvalidOperationException("Failed to format connection name.");
-    });
+    var n = _nextConnection.AddOrUpdate(parentName, 0, IncrementValue);
+    return $"{parentName}.CON{n:D8}";
   }
 
   /// <summary>

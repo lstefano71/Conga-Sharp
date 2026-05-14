@@ -69,7 +69,7 @@ public class FullIntegrationTests : IAsyncLifetime
 
     // --- Client → Server ---
     var sw = Stopwatch.StartNew();
-    await SendPayload(tc.Client.Pipeline!, mode, payload, "C1", isCommand: mode == "Command");
+    await SendPayload(tc.Client.Pipeline!, mode, payload, "CLT00000000", isCommand: mode == "Command");
     var received = await ReceivePayload(_root, mode, tc.ConnName, payloadSize);
     sw.Stop();
 
@@ -83,7 +83,7 @@ public class FullIntegrationTests : IAsyncLifetime
 
     sw.Restart();
     await SendReply(tc.ConnObj.Pipeline!, mode, replyPayload, tc.ConnName);
-    var clientReceived = await ReceivePayload(_root, mode, "C1", payloadSize);
+    var clientReceived = await ReceivePayload(_root, mode, "CLT00000000", payloadSize);
     sw.Stop();
 
     Assert.Equal(replyPayload, clientReceived);
@@ -101,7 +101,7 @@ public class FullIntegrationTests : IAsyncLifetime
 
     var payload = IntegrationTestHelper.GenerateRandomPayload(payloadSize);
     var modeObj = new BlkTextMode();
-    var outMsg = modeObj.PrepareOutbound("C1", payload, null, PostSendAction.None, null);
+    var outMsg = modeObj.PrepareOutbound("CLT00000000", payload, null, PostSendAction.None, null);
     await tc.Client.Pipeline!.SendAsync(outMsg);
 
     var recvEvt = _root.Events.Wait(tc.ConnName, 10_000, _root.ShutdownToken);
@@ -134,7 +134,7 @@ public class FullIntegrationTests : IAsyncLifetime
 
     // Send with compression
     var modeObj = new BlkRawMode();
-    var outMsg = modeObj.PrepareOutbound("C1", payload, null, PostSendAction.None, null);
+    var outMsg = modeObj.PrepareOutbound("CLT00000000", payload, null, PostSendAction.None, null);
     outMsg.Compression = algo;
     await tc.Client.Pipeline!.SendAsync(outMsg);
 
@@ -178,7 +178,7 @@ public class FullIntegrationTests : IAsyncLifetime
     var payload = IntegrationTestHelper.GenerateCompressiblePayload(payloadSize);
 
     var modeObj = new BlkRawMode();
-    var outMsg = modeObj.PrepareOutbound("C1", payload, null, PostSendAction.None, null);
+    var outMsg = modeObj.PrepareOutbound("CLT00000000", payload, null, PostSendAction.None, null);
     outMsg.Compression = algo;
     outMsg.CompressionLevel = level;
     await tc.Client.Pipeline!.SendAsync(outMsg);
@@ -215,7 +215,7 @@ public class FullIntegrationTests : IAsyncLifetime
     var payload = IntegrationTestHelper.GenerateRandomPayload(payloadSize);
 
     var sw = Stopwatch.StartNew();
-    await SendPayload(tc.Client.Pipeline!, mode, payload, "C1", isCommand: mode == "Command");
+    await SendPayload(tc.Client.Pipeline!, mode, payload, "CLT00000000", isCommand: mode == "Command");
     var received = await ReceivePayload(_root, mode, tc.ConnName, payloadSize);
     sw.Stop();
 
@@ -247,7 +247,7 @@ public class FullIntegrationTests : IAsyncLifetime
         : IntegrationTestHelper.GenerateRandomPayload(payloadSize);
 
     var modeObj = new BlkRawMode();
-    var outMsg = modeObj.PrepareOutbound("C1", payload, null, PostSendAction.None, null);
+    var outMsg = modeObj.PrepareOutbound("CLT00000000", payload, null, PostSendAction.None, null);
     outMsg.Compression = algo;
 
     var sw = Stopwatch.StartNew();
@@ -296,7 +296,7 @@ public class FullIntegrationTests : IAsyncLifetime
                 : IntegrationTestHelper.GenerateRandomPayload(size);
 
             var modeObj = new BlkRawMode();
-            var outMsg = modeObj.PrepareOutbound("C1", payload, null, PostSendAction.None, null);
+            var outMsg = modeObj.PrepareOutbound("CLT00000000", payload, null, PostSendAction.None, null);
             outMsg.Compression = algo;
             var elapsedMs = new List<double>(measuredIterations);
 

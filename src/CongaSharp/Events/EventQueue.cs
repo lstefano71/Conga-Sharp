@@ -154,7 +154,8 @@ public sealed class EventQueue : IDisposable
 
       return new CongaEvent {
         ObjectName = objectFilter!,
-        Type = EventType.Timeout
+        Type = EventType.Timeout,
+        ReasonCode = ErrorCodes.Timeout
       };
     }
 
@@ -182,7 +183,8 @@ public sealed class EventQueue : IDisposable
       if (remaining <= 0) {
         return new CongaEvent {
           ObjectName = objectFilter ?? ".",
-          Type = EventType.Timeout
+          Type = EventType.Timeout,
+          ReasonCode = ErrorCodes.Timeout
         };
       }
 
@@ -284,6 +286,7 @@ public sealed class EventQueue : IDisposable
   private static CongaEvent MakeShutdownEvent(string? objectFilter) => new() {
     ObjectName = objectFilter ?? ".",
     Type = EventType.Error,
+    ReasonCode = ErrorCodes.ShuttingDown,
     Payload = ShutdownPayload
   };
 }

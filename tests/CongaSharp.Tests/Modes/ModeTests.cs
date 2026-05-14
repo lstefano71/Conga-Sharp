@@ -62,10 +62,10 @@ public class ModeTests
   public void RawMode_OnBytesReceived_ProducesReceiveEvent()
   {
     var mode = new RawMode();
-    var events = mode.OnBytesReceived("S1.CON0001", new byte[] { 1, 2, 3 });
+    var events = mode.OnBytesReceived("SRV00000000.CON00000000", new byte[] { 1, 2, 3 });
     Assert.Single(events);
     Assert.Equal(EventType.Receive, events[0].Type);
-    Assert.Equal("S1.CON0001", events[0].ObjectName);
+    Assert.Equal("SRV00000000.CON00000000", events[0].ObjectName);
     Assert.Equal(new byte[] { 1, 2, 3 }, events[0].Payload.ToArray());
   }
 
@@ -73,7 +73,7 @@ public class ModeTests
   public void RawMode_OnBytesReceived_EmptyData_NoEvents()
   {
     var mode = new RawMode();
-    var events = mode.OnBytesReceived("S1.CON0001", ReadOnlySpan<byte>.Empty);
+    var events = mode.OnBytesReceived("SRV00000000.CON00000000", ReadOnlySpan<byte>.Empty);
     Assert.Empty(events);
   }
 
@@ -81,10 +81,10 @@ public class ModeTests
   public void RawMode_InvalidCloseFlags()
   {
     var mode = new RawMode();
-    var msg = mode.PrepareOutbound("S1.CON0001", new byte[] { 1, 2 }, null, PostSendAction.CloseCommand, null);
+    var msg = mode.PrepareOutbound("SRV00000000.CON00000000", new byte[] { 1, 2 }, null, PostSendAction.CloseCommand, null);
     Assert.NotEqual(0, msg.ErrorCode);
 
-    msg = mode.PrepareOutbound("S1.CON0001", new byte[] { 1, 2 }, null, PostSendAction.EmitSentEvent, null);
+    msg = mode.PrepareOutbound("SRV00000000.CON00000000", new byte[] { 1, 2 }, null, PostSendAction.EmitSentEvent, null);
     Assert.NotEqual(0, msg.ErrorCode);
   }
 
@@ -92,7 +92,7 @@ public class ModeTests
   public void RawMode_ValidSend()
   {
     var mode = new RawMode();
-    var msg = mode.PrepareOutbound("S1.CON0001", new byte[] { 1, 2, 3 }, null, PostSendAction.None, null);
+    var msg = mode.PrepareOutbound("SRV00000000.CON00000000", new byte[] { 1, 2, 3 }, null, PostSendAction.None, null);
     Assert.Equal(0, msg.ErrorCode);
     Assert.Equal(new byte[] { 1, 2, 3 }, msg.Payload.ToArray());
   }
@@ -101,7 +101,7 @@ public class ModeTests
   public void RawMode_OnDisconnected()
   {
     var mode = new RawMode();
-    var events = mode.OnDisconnected("S1.CON0001");
+    var events = mode.OnDisconnected("SRV00000000.CON00000000");
     Assert.Single(events);
     Assert.Equal(EventType.Closed, events[0].Type);
   }
@@ -110,7 +110,7 @@ public class ModeTests
   public void RawMode_ThrowsOnFrameReceived()
   {
     var mode = new RawMode();
-    Assert.Throws<InvalidOperationException>(() => mode.OnFrameReceived("S1.CON0001",
+    Assert.Throws<InvalidOperationException>(() => mode.OnFrameReceived("SRV00000000.CON00000000",
         new FrameData { MsgType = MsgType.Data, CmdName = "", CorrelationId = Guid.Empty, Payload = default, RawUserHeaders = default }));
   }
 

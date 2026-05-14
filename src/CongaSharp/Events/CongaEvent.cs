@@ -14,6 +14,13 @@ public sealed class CongaEvent : IDisposable
   public DateTime Timestamp { get; init; } = DateTime.UtcNow;
 
   /// <summary>
+  /// Conga-compatible reason code carried with this event.
+  /// For Closed events: 1119 (SocketClosed). For Timeout events: 100.
+  /// For Error events: the specific error code. 0 if not applicable.
+  /// </summary>
+  public int ReasonCode { get; init; }
+
+  /// <summary>
   /// True if this event terminates a command lifecycle (e.g., Respond frame).
   /// Used by EventQueue to mark the command's mailbox as complete.
   /// </summary>
@@ -76,8 +83,10 @@ public sealed class CongaEvent : IDisposable
 
   /// <summary>
   /// Numeric event code for the C API output.
+  /// Returns ReasonCode if set (e.g., 1119 for Closed, 100 for Timeout),
+  /// otherwise the EventType numeric value.
   /// </summary>
-  public int EventCode => (int)Type;
+  public int EventCode => ReasonCode != 0 ? ReasonCode : (int)Type;
 
   /// <summary>
   /// Returns pooled buffers. Safe to call multiple times.

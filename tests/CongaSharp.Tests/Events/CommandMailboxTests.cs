@@ -10,14 +10,14 @@ public class CommandMailboxTests
   public void PostAndReceive_BasicRoundtrip()
   {
     using var mailbox = new CommandMailbox();
-    var evt = new CongaEvent { ObjectName = "C1.Auto0", Type = EventType.Receive, Payload = new byte[] { 1, 2, 3 } };
+    var evt = new CongaEvent { ObjectName = "CLT00000000.Auto0", Type = EventType.Receive, Payload = new byte[] { 1, 2, 3 } };
 
     Assert.True(mailbox.Post(evt));
     var result = mailbox.TryReceive(1000);
 
     Assert.NotNull(result);
     Assert.Equal(EventType.Receive, result!.Type);
-    Assert.Equal("C1.Auto0", result.ObjectName);
+    Assert.Equal("CLT00000000.Auto0", result.ObjectName);
     Assert.Equal(new byte[] { 1, 2, 3 }, result.Payload.ToArray());
   }
 
@@ -38,7 +38,7 @@ public class CommandMailboxTests
     var waiter = Task.Run(() => result = mailbox.TryReceive(5000));
 
     Thread.Sleep(100);
-    mailbox.Post(new CongaEvent { ObjectName = "C1.Cmd", Type = EventType.Progress });
+    mailbox.Post(new CongaEvent { ObjectName = "CLT00000000.Cmd", Type = EventType.Progress });
 
     waiter.Wait(2000);
     Assert.NotNull(result);
@@ -56,7 +56,7 @@ public class CommandMailboxTests
     Thread.Sleep(100);
     Assert.False(waiter.IsCompleted);
 
-    mailbox.Post(new CongaEvent { ObjectName = "C1.Cmd", Type = EventType.Receive });
+    mailbox.Post(new CongaEvent { ObjectName = "CLT00000000.Cmd", Type = EventType.Receive });
 
     waiter.Wait(2000);
     Assert.NotNull(result);
@@ -67,8 +67,8 @@ public class CommandMailboxTests
   public void Complete_AllowsRemainingReads()
   {
     using var mailbox = new CommandMailbox();
-    mailbox.Post(new CongaEvent { ObjectName = "C1.Cmd", Type = EventType.Progress });
-    mailbox.Post(new CongaEvent { ObjectName = "C1.Cmd", Type = EventType.Receive, IsTerminal = true });
+    mailbox.Post(new CongaEvent { ObjectName = "CLT00000000.Cmd", Type = EventType.Progress });
+    mailbox.Post(new CongaEvent { ObjectName = "CLT00000000.Cmd", Type = EventType.Receive, IsTerminal = true });
     mailbox.Complete();
 
     var r1 = mailbox.TryReceive(100);
@@ -142,7 +142,7 @@ public class CommandMailboxTests
   public void Requeue_AfterComplete_PreservesEvent()
   {
     using var mailbox = new CommandMailbox();
-    mailbox.Post(new CongaEvent { ObjectName = "C1.Cmd", Type = EventType.Receive, IsTerminal = true });
+    mailbox.Post(new CongaEvent { ObjectName = "CLT00000000.Cmd", Type = EventType.Receive, IsTerminal = true });
     mailbox.Complete();
 
     var terminal = mailbox.TryReceive(100);

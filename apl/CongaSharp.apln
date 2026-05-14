@@ -187,7 +187,7 @@
     ⍝ Wait for an event. Returns: (objectName eventName eventCode payload userHeaders)
     ⍝ name    = object filter ('' or '.' for all)
     ⍝ timeout = milliseconds
-      rc obj evt code data dataLen hdrs hdrsLen←conga_wait h name timeout 256 256 64 64 0 65536 65536 0 4096 4096 0
+      rc obj evt code data dataLen hdrs hdrsLen←conga_wait h name timeout 256 256 64 64 0 512 512 0 128 128  0
       :If rc=0
           data←dataLen↑data     ⍝ trim to actual length
           hdrs←hdrsLen↑hdrs     ⍝ trim to actual length

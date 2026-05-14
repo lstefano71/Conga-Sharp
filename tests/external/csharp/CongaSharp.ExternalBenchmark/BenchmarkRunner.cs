@@ -68,7 +68,7 @@ internal static class BenchmarkRunner
                     {
                         if (evt.EventName != "Receive")
                             throw new InvalidOperationException($"Expected Command Receive, got '{evt.EventName}'");
-                        if (!evt.ObjectName.StartsWith(connectionName + "."))
+                        if (!evt.ObjectName.StartsWith(connectionName + ".",StringComparison.Ordinal))
                             throw new InvalidOperationException($"Unexpected command object '{evt.ObjectName}'");
                         if (!PayloadMatches(scenario.Mode, requestPayload, evt.Payload))
                             throw new InvalidOperationException("Server received unexpected command payload");

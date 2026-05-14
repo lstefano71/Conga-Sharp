@@ -154,11 +154,8 @@ public static partial class NativeExports
 
       evt = root.Events.Wait(filter, timeoutMs, root.ShutdownToken);
 
-      if (evt.Type == EventType.Timeout)
-        return ErrorCodes.WaitTimeout;
-
-      if (evt.Type == EventType.Error)
-        return ErrorCodes.ShuttingDown;
+      // Always return rc=0 (EventMode 1 — everything is an event).
+      // The event type and ReasonCode carry the semantic information.
 
       // Write object name (string buffer — re-enqueue if too small)
       var objRc = StringMarshaller.WriteToBuffer(evt.ObjectName, outObj, outObjCap);
@@ -278,6 +275,15 @@ public static partial class NativeExports
         if (outNameLen != null)
           *outNameLen = resolvedHandle.Length + 1;
         return ErrorCodes.BufferTooSmall;
+      }
+
+      // Guard: reject duplicate pending command names (D4).
+      // If an explicit command name was provided and it's already registered
+      // (as a CommandObject or as an active mailbox), return 1008.
+      if (isCommandMode && cmdName != null) {
+        var existingCmd = root.Registry.Lookup(resolvedHandle);
+        if (existingCmd != null || root.Events.GetMailbox(resolvedHandle) != null)
+          return ErrorCodes.CommandNameInUse;
       }
 
       // Pre-register mailbox for tracked Command mode sends.

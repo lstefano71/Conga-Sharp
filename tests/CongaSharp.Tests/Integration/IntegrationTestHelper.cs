@@ -69,20 +69,20 @@ internal static class IntegrationTestHelper
   public static async Task<TestConnection> SetupConnection(
       Root root, string mode, int bufferSize = 65536)
   {
-    var server = new ServerObject("S1", "127.0.0.1", 0, mode, bufferSize);
+    var server = new ServerObject("SRV00000000", "127.0.0.1", 0, mode, bufferSize);
     root.Registry.TryAdd(server);
     var startRc = server.Start(root);
     if (startRc != ErrorCodes.Success)
       throw new InvalidOperationException($"Server start failed: {startRc}");
 
-    var client = new ClientObject("C1", "127.0.0.1", server.LocalPort, mode, bufferSize);
+    var client = new ClientObject("CLT00000000", "127.0.0.1", server.LocalPort, mode, bufferSize);
     root.Registry.TryAdd(client);
     var connectRc = await client.ConnectAsync(root, 10_000);
     if (connectRc != ErrorCodes.Success)
       throw new InvalidOperationException($"Client connect failed: {connectRc}");
 
     // Wait for Connect event to get the server-side connection name
-    var connectEvt = root.Events.Wait("S1", 10_000, root.ShutdownToken);
+    var connectEvt = root.Events.Wait("SRV00000000", 10_000, root.ShutdownToken);
     if (connectEvt.Type != EventType.Connect)
       throw new InvalidOperationException($"Expected Connect event, got {connectEvt.Type}");
 
