@@ -2,6 +2,100 @@
 
 ## Unreleased
 
+### Breaking: DWA Kit transition — new `conga_pp_*` export convention
+
+**Issue:** The original C-ABI exports (`conga_*`) used `char*`/`byte*` buffers with caller-managed capacity, requiring complex buffer management in the APL cover. String results needed `>0T[] I4` (buffer + size) declarations with trim logic. This was error-prone and added marshalling overhead for every call.
+
+**Resolution:** Added a complete set of DWA Kit exports (`conga_pp_*`) using `[DwaExport]` attributes. These use `LOCALP*` parameters (`<PP`/`>PP` in ⎕NA) for direct workspace access:
+
+- `conga_pp_wait` returns a 4-element nested APL vector `(rc objName eventType data)` directly
+- `conga_pp_srv_create`/`conga_pp_clt_create` return 2-element `(rc objName)` directly
+- `conga_pp_send` returns 2-element `(rc resolvedHandle)` directly
+- `conga_pp_names` returns a nested string vector directly
+- String inputs use `<PP` — no buffer sizing needed
+- Byte data via type-83 vectors (from `220⌶`) pass through `<PP` as-is
+
+**New exports:**
+| Export | ⎕NA | Purpose |
+|--------|-----|---------|
+| `conga_pp_init` | `P dll\|… ` | Returns root handle |
+| `conga_pp_shutdown` | `I4 dll\|… P` | Shutdown root |
+| `conga_pp_version` | `dll\|… >PP` | Get version string |
+| `conga_pp_srv_create` | `dll\|… P <PP <PP I4 <PP I4 >PP` | Create server → (rc name) |
+| `conga_pp_srv_start` | `I4 dll\|… P <PP` | Start server |
+| `conga_pp_clt_create` | `dll\|… P <PP <PP I4 <PP I4 >PP` | Create client → (rc name) |
+| `conga_pp_clt_connect` | `I4 dll\|… P <PP I4` | Connect client |
+| `conga_pp_wait` | `dll\|… P <PP I4 >PP` | Wait → (rc obj evt data) |
+| `conga_pp_send` | `dll\|… P <PP <PP I4 I4 I4 >PP` | Send → (rc handle) |
+| `conga_pp_respond` | `I4 dll\|… P <PP <PP I4` | Respond to command |
+| `conga_pp_progress` | `I4 dll\|… P <PP <PP I4` | Progress event |
+| `conga_pp_close` | `I4 dll\|… P <PP` | Close object |
+| `conga_pp_exists` | `I4 dll\|… P <PP` | Check name exists |
+| `conga_pp_names` | `dll\|… P <PP >PP` | Get child names |
+| `conga_pp_setprop` | `I4 dll\|… P <PP <PP <PP` | Set property |
+| `conga_pp_getprop` | `I4 dll\|… P <PP <PP >PP` | Get property |
+
+**DLL architecture change:** Published DLL is now two files:
+- `congasharp.dll` — C shim (thin wrapper, ~115KB)
+- `congasharp_impl.dll` — NativeAOT implementation (~3.4MB)
+
+The C shim manages LOCALP lifecycle and calls into the impl DLL. Old `conga_*` exports remain in the impl DLL for test compatibility but are not exposed through the shim.
+
+**Affected files:**
+- `src/CongaSharp/DwaExports.cs` — **new** all DWA export methods
+- `src/CongaSharp/CongaSharp.csproj` — added Dyalog.DWA.Kit 0.1.0 package
+- `nuget.config` — **new** local NuGet feed for DWA Kit
+- `src/CongaSharp/NativeExportsNetworking.cs` — helper methods made internal
+
+### Breaking: Behavioral gap fixes — EventMode 1, naming, error codes
+
+**Issue:** Multiple behavioral gaps between Conga-Sharp and real Conga identified via live RIDE testing against Dyalog Conga 3.6.
+
+**Resolution:** Thirteen design decisions (D1–D13) documented in CONTEXT.md:
+
+1. **Auto-name format** (D1): Changed from `SRV0001`/`CLT0001` to real Conga format `SRV00000000`/`CLT00000000`/`CON00000000` (prefix + D8 zero-padded counter).
+
+2. **EventMode 1 always** (D3): `conga_wait`/`conga_pp_wait` always returns rc=0. Error information is in the event tuple:
+   - Timeout: `(0 '.' 'Timeout' 100)`
+   - Peer disconnect: `(0 'name' 'Closed' 1119)`
+   - Shutdown: `(0 '.' 'Error' 2002)`
+
+3. **Error code cleanup** (D9): Removed error code 1 (`WaitTimeout`). Added 1008 (`CommandNameInUse`). Changed `ConnectFailed` from 2012 to 1111 to match real Conga.
+
+4. **Object state model** (D6): Added `Error` state to `Created → Started → Error/Closed`.
+
+5. **Peer disconnect** (D8): Changed from Error event (type 9) to Closed event (type 7) with code 1119.
+
+6. **Command name guard** (D4): Sending with a duplicate pending command name now returns 1008.
+
+7. **Name uniqueness** (D4): Creating an object with an existing name returns 1009.
+
+### APL cover rewrite for DWA Kit
+
+Rewrote `apl/CongaSharp.apln` to use `conga_pp_*` exports:
+- Result shapes match real Conga: `CS.Srv` → `(rc name)`, `CS.Wait` → `(rc obj evt data)`
+- No buffer management — PP parameters handle marshalling
+- Added `CS.Exists`, `CS.Version`, `CS.Names`
+- `CS.Bind` now accepts DLL path argument
+- `CS.Srv`/`CS.Clt` do three-phase internally (create→start/connect)
+- Changed to `⎕IO←0`
+
+### APL test suite
+
+Added `apl/CSTest.apln` — comprehensive integration test namespace covering:
+- Lifecycle (init, shutdown, version)
+- Server/client creation and naming
+- Name collision (1009)
+- Connect failure (1111)
+- Wait timeout
+- Command mode echo (send→receive→respond round-trip)
+- Raw mode data transfer
+- Text mode
+- Peer disconnect (Closed event with 1119)
+- Names enumeration
+- Property set/get
+- Invalid name errors
+
 ### Performance: TCP_NODELAY, sync send path, reduced allocations
 
 **Issue:** Echo client loop measured 0.8ms per round-trip vs 0.5ms for original Conga — 60% overhead. Root causes: Nagle's algorithm enabled by default, async state machine overhead on the synchronous C ABI send path, per-call heap allocations in the mailbox wait mechanism, closure allocations in counter updates, and a redundant UserHeaders decode/encode round-trip.

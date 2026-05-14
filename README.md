@@ -1,30 +1,30 @@
 # Conga-Sharp
 
-A reimplementation of Dyalog's Conga TCP/IP communication framework in C# 14 / .NET 10, compiled to a native Windows DLL via NativeAOT. Exposes a C-compatible API consumed by Dyalog APL via `⎕NA`.
+A reimplementation of Dyalog's Conga TCP/IP communication framework in C# 14 / .NET 10, compiled to a native Windows DLL via NativeAOT. Consumed by Dyalog APL via `⎕NA` using the [DWA Kit](https://github.com/dyalog/bridge-dwa) for direct workspace access — no buffer marshalling needed.
 
 ## Features
 
 - **5 connection modes**: Raw, Text, BlkRaw, BlkText, Command
 - **Command mode RPC**: named commands with Progress and Respond
-- **New wire protocol**: 52-byte header, CRC-32C integrity (two-stage), per-message compression (Deflate/LZ4/Zstd) with level control, user-defined headers
+- **Wire protocol**: 40-byte header, CRC-32C integrity (two-stage), per-message compression (Deflate/LZ4/Zstd) with level control, user-defined headers
 - **Three-phase lifecycle**: create → configure → start (eliminates race conditions)
+- **DWA Kit integration**: `conga_pp_wait` returns a 4-element nested APL vector directly into the workspace
 - **Thread-safe**: concurrent APL threads supported
-- **Single native DLL**: no .NET runtime installation required
-- **JSON output**: Tree, Describe, Names, GetProp return JSON (parsed with `⎕JSON`)
+- **Two published DLLs**: `congasharp.dll` (C shim) + `congasharp_impl.dll` (NativeAOT)
 
 ## Quick Start
 
-### Build
+### Build & Publish
 
-```bash
-dotnet publish src/CongaSharp/CongaSharp.csproj -r win-x64 -c Release
+```powershell
+dotnet publish src\CongaSharp\CongaSharp.csproj -c Release -r win-x64
 ```
 
-Output: `src/CongaSharp/bin/Release/net10.0/win-x64/publish/congasharp.dll`
+Output: `src\CongaSharp\bin\Release\net10.0\win-x64\publish\congasharp.dll` (+ `congasharp_impl.dll`)
 
-### Run Tests
+### Run C# Unit Tests
 
-```bash
+```powershell
 dotnet test
 ```
 
@@ -34,27 +34,25 @@ dotnet test
 ⍝ Load the cover namespace
 2 ⎕FIX 'file://path/to/apl/CongaSharp.apln'
 
-⍝ Point to the DLL by editing CS.DllPath if needed
-
-⍝ Bind ⎕NA declarations
-CS.Bind
+⍝ Bind ⎕NA declarations (pass DLL path or '' for default)
+CS.Bind 'path\to\publish\congasharp.dll'
 
 ⍝ Initialise
 h ← CS.Init ⍬
 
 ⍝ Start a Command-mode server on port 8080
-sName ← CS.Srv h '' '' 8080 'Command' 16384
+(rc sName) ← CS.Srv h '' '' 8080 'Command'
 
-⍝ Wait for a connection
-obj evt code data hdrs ← CS.Wait h '' 5000
-⍝ → obj='S1.CON0001'  evt='Connect'  code=1
+⍝ Wait for a connection (always rc=0, EventMode 1)
+(rc obj evt data) ← CS.Wait h '.' 5000
+⍝ → 0 'SRV00000000.CON00000000' 'Connect' ''
 
 ⍝ Wait for a command
-obj evt code data hdrs ← CS.Wait h '' 5000
-⍝ → obj='S1.CON0001.Echo'  evt='Receive'  code=2  data=payload
+(rc obj evt data) ← CS.Wait h '.' 5000
+⍝ → 0 'SRV00000000.CON00000000.Cmd00000000' 'Receive' <bytes>
 
 ⍝ Send a response
-CS.Respond h 'S1.CON0001.Echo' (⎕UCS 'Hello back')
+CS.Respond h obj (1(220⌶)'Hello back')
 
 ⍝ Clean up
 CS.Close h sName
@@ -64,20 +62,28 @@ CS.Shutdown h
 ### Client Side
 
 ```apl
-CS.Bind
+CS.Bind 'path\to\publish\congasharp.dll'
 h ← CS.Init ⍬
 
 ⍝ Connect to server
-cName ← CS.Clt h '' '127.0.0.1' 8080 'Command' 16384 5000
+(rc cName) ← CS.Clt h '' '127.0.0.1' 8080 'Command'
 
-⍝ Send a command named 'Echo'
-payload ← ⎕UCS 'Hello server'
-CS.SendEx h (cName,'.Echo') payload ⍬ 0 0 0
+⍝ Send a command (auto-generates handle)
+sendData ← 1(220⌶)'Hello server'
+(rc cmdHandle) ← CS.Send h cName sendData
 
-⍝ Wait for response
-obj evt code data hdrs ← CS.Wait h '' 5000
+⍝ Wait for response on specific handle
+(rc obj evt data) ← CS.Wait h cmdHandle 5000
 
 CS.Shutdown h
+```
+
+### Run APL Integration Tests
+
+```apl
+2 ⎕FIX 'file://path/to/apl/CongaSharp.apln'
+2 ⎕FIX 'file://path/to/apl/CSTest.apln'
+CSTest.RunAll 'path\to\publish\congasharp.dll'
 ```
 
 ## Connection Modes
@@ -94,29 +100,39 @@ CS.Shutdown h
 
 **Framed** modes (BlkRaw, BlkText, Command) use the Conga-Sharp wire protocol (52-byte header, CRC, compression). Both sides must be Conga-Sharp.
 
-## API Reference
+## API Reference (DWA Exports)
 
-All functions return `int32` (0 = success). Structured output is JSON.
+APL consumers use the `conga_pp_*` exports via the CS cover namespace. All PP-suffixed exports use `LOCALP*` parameters for direct workspace access.
 
-| Export | Purpose |
-|--------|---------|
-| `conga_init` | Create root instance |
-| `conga_shutdown` | Destroy root |
-| `conga_srv_create` | Create server (no I/O) |
-| `conga_srv_start` | Start server (bind + listen) |
-| `conga_clt_create` | Create client (no I/O) |
-| `conga_clt_connect` | Connect client |
-| `conga_wait` | Wait for event |
-| `conga_send` | Send data (headers, close flag, compression, level) |
-| `conga_respond` | Final command response (compression, level) |
-| `conga_progress` | Interim command progress (compression, level) |
-| `conga_close` | Close object |
-| `conga_setprop` | Set property (JSON) |
-| `conga_getprop` | Get property (JSON) |
-| `conga_tree` | Object hierarchy (JSON) |
-| `conga_describe` | Object properties (JSON) |
-| `conga_names` | Child names (JSON) |
-| `conga_version` | Library version |
+| Export | ⎕NA Pattern | Purpose |
+|--------|-------------|---------|
+| `conga_pp_init` | `P dll\|…` | Create root → handle |
+| `conga_pp_shutdown` | `I4 dll\|… P` | Destroy root |
+| `conga_pp_version` | `dll\|… >PP` | Version string |
+| `conga_pp_srv_create` | `dll\|… P <PP <PP I4 <PP I4 >PP` | Create server → (rc name) |
+| `conga_pp_srv_start` | `I4 dll\|… P <PP` | Start server |
+| `conga_pp_clt_create` | `dll\|… P <PP <PP I4 <PP I4 >PP` | Create client → (rc name) |
+| `conga_pp_clt_connect` | `I4 dll\|… P <PP I4` | Connect client |
+| `conga_pp_wait` | `dll\|… P <PP I4 >PP` | Wait → (rc obj evt data) |
+| `conga_pp_send` | `dll\|… P <PP <PP I4 I4 I4 >PP` | Send → (rc handle) |
+| `conga_pp_respond` | `I4 dll\|… P <PP <PP I4` | Respond to command |
+| `conga_pp_progress` | `I4 dll\|… P <PP <PP I4` | Progress event |
+| `conga_pp_close` | `I4 dll\|… P <PP` | Close object |
+| `conga_pp_exists` | `I4 dll\|… P <PP` | Check name exists |
+| `conga_pp_names` | `dll\|… P <PP >PP` | Child names |
+| `conga_pp_setprop` | `I4 dll\|… P <PP <PP <PP` | Set property |
+| `conga_pp_getprop` | `I4 dll\|… P <PP <PP >PP` | Get property |
+
+### Event semantics (EventMode 1)
+
+Wait always returns rc=0. The event tuple `(rc objName eventType data)` carries all information:
+
+| Event | objName | eventType | data |
+|-------|---------|-----------|------|
+| Timeout | `'.'` | `'Timeout'` | `100` |
+| Connect | `'SRV0.CON0'` | `'Connect'` | `''` |
+| Receive | `'SRV0.CON0'` | `'Receive'` | byte vector |
+| Closed | `'SRV0.CON0'` | `'Closed'` | `1119` |
 
 See [docs/PRD.md](docs/PRD.md) for full API specification and [docs/implementation-plan.md](docs/implementation-plan.md) for architecture details.
 

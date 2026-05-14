@@ -1,0 +1,435 @@
+:Namespace CSTest
+⍝ CongaSharp Integration Tests
+⍝ Run: CSTest.RunAll ''
+⍝
+⍝ Requirements:
+⍝   - Published congasharp.dll (dotnet publish)
+⍝   - CS namespace loaded (CongaSharp.apln)
+
+    ⎕IO←0 ⋄ ⎕ML←1
+
+    pass←0
+    fail←0
+    errors←⍬
+
+    ∇ Init
+      pass←0 ⋄ fail←0 ⋄ errors←⍬
+    ∇
+
+    ∇ Assert(test desc)
+      :If test
+          pass+←1
+      :Else
+          fail+←1
+          errors,←⊂desc
+          ⎕←'FAIL: ',desc
+      :EndIf
+    ∇
+
+    ∇ Report
+      ⎕←''
+      ⎕←'═══════════════════════════'
+      ⎕←'Passed: ',⍕pass
+      ⎕←'Failed: ',⍕fail
+      :If 0<≢errors
+          ⎕←'Failures:'
+          {⎕←'  • ',⍵}¨errors
+      :EndIf
+      ⎕←'═══════════════════════════'
+    ∇
+
+    ⍝ ── Test: Lifecycle ──────────────────────────────────────
+
+    ∇ TestLifecycle;h;r
+      ⎕←'--- TestLifecycle ---'
+
+      ⍝ Init returns a handle (non-zero pointer)
+      h←CS.Init ⍬
+      Assert(h≠0)'Init returns non-zero handle'
+
+      ⍝ Version returns a string
+      r←CS.Version
+      Assert(0<≢r)'Version returns non-empty string'
+
+      ⍝ Shutdown succeeds
+      r←CS.Shutdown h
+      Assert(r=0)'Shutdown returns 0'
+
+      ⍝ Double shutdown returns error
+      r←CS.Shutdown h
+      Assert(r≠0)'Double shutdown returns error'
+    ∇
+
+    ⍝ ── Test: Server Lifecycle ───────────────────────────────
+
+    ∇ TestServerLifecycle;h;r;sname
+      ⎕←'--- TestServerLifecycle ---'
+      h←CS.Init ⍬
+
+      ⍝ Create server with auto-name
+      r←CS.Srv h '' '' 0 'Command'
+      Assert(0=⊃r)'Srv returns rc=0'
+      sname←1⊃r
+      Assert('SRV'≡3↑sname)'Auto-name starts with SRV'
+      Assert(11=≢sname)'Auto-name is 11 chars (SRV+D8)'
+
+      ⍝ Exists returns 0 for existing server
+      Assert(0=CS.Exists h sname)'Exists returns 0 for server'
+
+      ⍝ Close succeeds
+      Assert(0=CS.Close h sname)'Close returns 0'
+
+      ⍝ Exists returns 1002 after close
+      Assert(1002=CS.Exists h sname)'Exists returns 1002 after close'
+
+      ⍝ Name is immediately reusable (D2)
+      r←CS.SrvCreate h sname '' 0 'Text'
+      Assert(0=⊃r)'Name reusable after close'
+
+      {}CS.Shutdown h
+    ∇
+
+    ⍝ ── Test: Client Lifecycle ───────────────────────────────
+
+    ∇ TestClientLifecycle;h;r;cname
+      ⎕←'--- TestClientLifecycle ---'
+      h←CS.Init ⍬
+
+      ⍝ Create client with auto-name (no connect)
+      r←CS.CltCreate h '' '127.0.0.1' 0 'Command'
+      Assert(0=⊃r)'CltCreate returns rc=0'
+      cname←1⊃r
+      Assert('CLT'≡3↑cname)'Auto-name starts with CLT'
+
+      ⍝ Clean up
+      {}CS.Close h cname
+      {}CS.Shutdown h
+    ∇
+
+    ⍝ ── Test: Name Collision ─────────────────────────────────
+
+    ∇ TestNameCollision;h;r1;r2;sname
+      ⎕←'--- TestNameCollision ---'
+      h←CS.Init ⍬
+
+      ⍝ Create server
+      r1←CS.SrvCreate h 'MYSRV' '' 0 'Command'
+      Assert(0=⊃r1)'First create succeeds'
+
+      ⍝ Second create with same name returns 1009
+      r2←CS.SrvCreate h 'MYSRV' '' 0 'Command'
+      Assert(1009=⊃r2)'Duplicate name returns 1009'
+
+      {}CS.Close h 'MYSRV'
+      {}CS.Shutdown h
+    ∇
+
+    ⍝ ── Test: Connect Failure ────────────────────────────────
+
+    ∇ TestConnectFailure;h;r
+      ⎕←'--- TestConnectFailure ---'
+      h←CS.Init ⍬
+
+      ⍝ Connect to non-existent server should fail with 1111
+      r←CS.Clt h '' '127.0.0.1' 59999 'Text'
+      Assert(1111=⊃r)'Connect failure returns 1111'
+
+      {}CS.Shutdown h
+    ∇
+
+    ⍝ ── Test: Wait Timeout ───────────────────────────────────
+
+    ∇ TestWaitTimeout;h;r;evt
+      ⎕←'--- TestWaitTimeout ---'
+      h←CS.Init ⍬
+
+      ⍝ Create a server so we have something to wait on
+      r←CS.Srv h '' '' 0 'Command'
+      Assert(0=⊃r)'Server created'
+
+      ⍝ Wait with short timeout
+      evt←CS.Wait h '.' 100
+      Assert(0=⊃evt)'Wait rc=0 (EventMode 1)'
+      Assert('Timeout'≡2⊃evt)'Event type is Timeout'
+      Assert(100=3⊃evt)'Event data is 100 (timeout code)'
+
+      {}CS.Shutdown h
+    ∇
+
+    ⍝ ── Test: Command Mode Echo ──────────────────────────────
+
+    ∇ TestCommandEcho;h;sr;cr;sname;cname;evt;cmdName;sendData;respData
+      ⎕←'--- TestCommandEcho ---'
+      h←CS.Init ⍬
+
+      ⍝ Create server on ephemeral port
+      sr←CS.SrvCreate h '' '' 0 'Command'
+      Assert(0=⊃sr)'Server created'
+      sname←1⊃sr
+
+      ⍝ Get the assigned port
+      :Trap 0
+          ⍝ Start server
+          Assert(0=CS.SrvStart h sname)'Server started'
+
+          ⍝ Get port from properties
+          port←⊃⊃(//)⎕VFI 1⊃CS.GetProp h sname 'Port'
+
+          ⍝ Create and connect client
+          cr←CS.Clt h '' '127.0.0.1' port 'Command'
+          :If 0≠⊃cr
+              ⎕←'  Client connect failed: ',⍕cr
+              {}CS.Shutdown h ⋄ :Return
+          :EndIf
+          cname←1⊃cr
+
+          ⍝ Wait for Connect event on server side
+          evt←CS.Wait h sname 5000
+          Assert(0=⊃evt)'Connect event rc=0'
+          Assert('Connect'≡2⊃evt)'Connect event type'
+          connName←1⊃evt
+
+          ⍝ Client sends command
+          sendData←1(220⌶)1 2 3 4 5
+          sendResult←CS.Send h cname sendData
+          Assert(0=⊃sendResult)'Send rc=0'
+          cmdName←1⊃sendResult
+          Assert(cname≡(≢cname)↑cmdName)'Command name starts with client name'
+
+          ⍝ Server receives command
+          evt←CS.Wait h sname 5000
+          Assert(0=⊃evt)'Receive event rc=0'
+          Assert('Receive'≡2⊃evt)'Receive event type'
+
+          ⍝ Server responds
+          respData←1(220⌶)100 200 300
+          Assert(0=CS.Respond h(1⊃evt)respData)'Respond rc=0'
+
+          ⍝ Client receives response
+          evt←CS.Wait h cmdName 5000
+          Assert(0=⊃evt)'Response event rc=0'
+          Assert('Receive'≡2⊃evt)'Response is Receive event'
+          Assert((100 200 300)≡0(220⌶)3⊃evt)'Response data matches'
+      :Else
+          ⎕←'  Error: ',⎕DMX.Message
+          fail+←1
+      :EndTrap
+
+      {}CS.Shutdown h
+    ∇
+
+    ⍝ ── Test: Raw Mode ───────────────────────────────────────
+
+    ∇ TestRawMode;h;sr;cr;sname;cname;evt;connName;port
+      ⎕←'--- TestRawMode ---'
+      h←CS.Init ⍬
+
+      sr←CS.SrvCreate h '' '' 0 'Raw'
+      Assert(0=⊃sr)'Raw server created'
+      sname←1⊃sr
+      Assert(0=CS.SrvStart h sname)'Raw server started'
+
+      port←⊃⊃(//)⎕VFI 1⊃CS.GetProp h sname 'Port'
+
+      :Trap 0
+          cr←CS.Clt h '' '127.0.0.1' port 'Raw'
+          :If 0≠⊃cr
+              ⎕←'  Raw client connect failed: ',⍕cr
+              {}CS.Shutdown h ⋄ :Return
+          :EndIf
+          cname←1⊃cr
+
+          ⍝ Server gets Connect
+          evt←CS.Wait h sname 5000
+          Assert('Connect'≡2⊃evt)'Raw connect event'
+          connName←1⊃evt
+
+          ⍝ Client sends raw bytes
+          {}CS.Send h cname(1(220⌶)⍳10)
+
+          ⍝ Server receives
+          evt←CS.Wait h sname 5000
+          Assert('Receive'≡2⊃evt)'Raw receive event'
+          Assert((⍳10)≡0(220⌶)3⊃evt)'Raw data matches'
+      :Else
+          ⎕←'  Error: ',⎕DMX.Message
+          fail+←1
+      :EndTrap
+
+      {}CS.Shutdown h
+    ∇
+
+    ⍝ ── Test: Text Mode ──────────────────────────────────────
+
+    ∇ TestTextMode;h;sr;cr;sname;cname;evt;connName;port
+      ⎕←'--- TestTextMode ---'
+      h←CS.Init ⍬
+
+      sr←CS.SrvCreate h '' '' 0 'Text'
+      Assert(0=⊃sr)'Text server created'
+      sname←1⊃sr
+      Assert(0=CS.SrvStart h sname)'Text server started'
+
+      port←⊃⊃(//)⎕VFI 1⊃CS.GetProp h sname 'Port'
+
+      :Trap 0
+          cr←CS.Clt h '' '127.0.0.1' port 'Text'
+          :If 0≠⊃cr
+              ⎕←'  Text client connect failed: ',⍕cr
+              {}CS.Shutdown h ⋄ :Return
+          :EndIf
+          cname←1⊃cr
+
+          ⍝ Server gets Connect
+          evt←CS.Wait h sname 5000
+          Assert('Connect'≡2⊃evt)'Text connect event'
+
+          ⍝ Client sends text (as byte vector with newline terminator)
+          msg←1(220⌶)'Hello World',⎕UCS 10
+          {}CS.Send h cname msg
+
+          ⍝ Server receives
+          evt←CS.Wait h sname 5000
+          Assert('Receive'≡2⊃evt)'Text receive event'
+      :Else
+          ⎕←'  Error: ',⎕DMX.Message
+          fail+←1
+      :EndTrap
+
+      {}CS.Shutdown h
+    ∇
+
+    ⍝ ── Test: Peer Disconnect ────────────────────────────────
+
+    ∇ TestPeerDisconnect;h;sr;cr;sname;cname;evt;connName;port
+      ⎕←'--- TestPeerDisconnect ---'
+      h←CS.Init ⍬
+
+      sr←CS.SrvCreate h '' '' 0 'Raw'
+      Assert(0=⊃sr)'Server created'
+      sname←1⊃sr
+      Assert(0=CS.SrvStart h sname)'Server started'
+
+      port←⊃⊃(//)⎕VFI 1⊃CS.GetProp h sname 'Port'
+
+      :Trap 0
+          cr←CS.Clt h '' '127.0.0.1' port 'Raw'
+          :If 0≠⊃cr
+              {}CS.Shutdown h ⋄ :Return
+          :EndIf
+          cname←1⊃cr
+
+          ⍝ Wait for connect
+          evt←CS.Wait h sname 5000
+          connName←1⊃evt
+
+          ⍝ Close client — server should get Closed event
+          {}CS.Close h cname
+
+          ⍝ Server sees Closed event with code 1119
+          evt←CS.Wait h sname 5000
+          Assert('Closed'≡2⊃evt)'Peer disconnect is Closed event'
+          Assert(1119=3⊃evt)'Closed code is 1119'
+      :Else
+          ⎕←'  Error: ',⎕DMX.Message
+          fail+←1
+      :EndTrap
+
+      {}CS.Shutdown h
+    ∇
+
+    ⍝ ── Test: Names ──────────────────────────────────────────
+
+    ∇ TestNames;h;sr;cr;names
+      ⎕←'--- TestNames ---'
+      h←CS.Init ⍬
+
+      ⍝ Empty initially
+      names←CS.Names h '.'
+      Assert(0=≢names)'No names initially'
+
+      ⍝ Create two servers
+      sr←CS.SrvCreate h '' '' 0 'Command'
+      Assert(0=⊃sr)'Server 1 created'
+      sr←CS.SrvCreate h '' '' 0 'Text'
+      Assert(0=⊃sr)'Server 2 created'
+
+      ⍝ Should have 2 names
+      names←CS.Names h '.'
+      Assert(2=≢names)'Two names after creating two servers'
+
+      {}CS.Shutdown h
+    ∇
+
+    ⍝ ── Test: Properties ─────────────────────────────────────
+
+    ∇ TestProperties;h;sr;sname;r
+      ⎕←'--- TestProperties ---'
+      h←CS.Init ⍬
+
+      sr←CS.SrvCreate h '' '' 0 'Command'
+      sname←1⊃sr
+
+      ⍝ Set a property (BufferSize as JSON)
+      r←CS.SetProp h sname 'BufferSize' '32768'
+      Assert(0=r)'SetProp returns 0'
+
+      ⍝ Get it back
+      r←CS.GetProp h sname 'BufferSize'
+      Assert(0=⊃r)'GetProp returns rc=0'
+      Assert('32768'≡1⊃r)'GetProp returns correct value'
+
+      ⍝ Invalid property
+      r←CS.SetProp h sname 'NonExistent' '"value"'
+      Assert(r≠0)'Invalid property returns error'
+
+      {}CS.Shutdown h
+    ∇
+
+    ⍝ ── Test: Invalid Name ───────────────────────────────────
+
+    ∇ TestInvalidName;h;r
+      ⎕←'--- TestInvalidName ---'
+      h←CS.Init ⍬
+
+      ⍝ Close non-existent name
+      r←CS.Close h 'NOSUCHNAME'
+      Assert(1002=r)'Close invalid name returns 1002'
+
+      ⍝ Exists non-existent name
+      r←CS.Exists h 'NOSUCHNAME'
+      Assert(1002=r)'Exists invalid name returns 1002'
+
+      {}CS.Shutdown h
+    ∇
+
+    ⍝ ── Run All ──────────────────────────────────────────────
+
+    ∇ RunAll dllPath
+    ⍝ Run all tests. Pass DLL path or '' for default.
+      CS.Bind dllPath
+      Init
+
+      :Trap 0
+          TestLifecycle
+          TestServerLifecycle
+          TestClientLifecycle
+          TestNameCollision
+          TestConnectFailure
+          TestWaitTimeout
+          TestCommandEcho
+          TestRawMode
+          TestTextMode
+          TestPeerDisconnect
+          TestNames
+          TestProperties
+          TestInvalidName
+      :Else
+          ⎕←'FATAL: ',⎕DMX.Message
+          fail+←1
+      :EndTrap
+
+      Report
+    ∇
+
+:EndNamespace
